@@ -296,6 +296,31 @@ function readManifest(): Promise<SidecarManifest> {
   return fsp.readFile(getManifestPath(), "utf8").then((raw) => JSON.parse(raw) as SidecarManifest);
 }
 
+export interface ManifestVoiceInfo {
+  id: string;
+  name: string;
+  locale: string;
+  speaker: string;
+  quality: string;
+}
+
+export async function listPlatformManifestVoices(): Promise<ManifestVoiceInfo[]> {
+  const manifest = await readManifest();
+  const key = platformKey();
+  const platformConfig = manifest.platforms[key];
+  if (!platformConfig) {
+    return [];
+  }
+
+  return (platformConfig.voices || []).map((voice) => ({
+    id: voice.id,
+    name: voice.name,
+    locale: voice.locale,
+    speaker: voice.speaker,
+    quality: voice.quality
+  }));
+}
+
 export interface EnsureRuntimeAssetsOptions {
   appDataDir: string;
   onStatus?: (status: BootstrapStatus) => void;

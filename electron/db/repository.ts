@@ -300,6 +300,9 @@ export class Repository {
       if (row.key === "maxConcurrentJobs" && typeof value === "number") {
         settings.maxConcurrentJobs = value;
       }
+      if (row.key === "useNvidiaGpu" && typeof value === "boolean") {
+        settings.useNvidiaGpu = value;
+      }
     }
     return settings;
   }

@@ -317,7 +317,8 @@ async function bootstrap(): Promise<void> {
     defaultVoiceId: "es_ES-carlfm-high",
     defaultOutputFormat: "mp3",
     keepIntermediates: false,
-    maxConcurrentJobs: 1
+    maxConcurrentJobs: 1,
+    useNvidiaGpu: false
   });
 
   queueManager = new QueueManager({

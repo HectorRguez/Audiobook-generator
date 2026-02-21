@@ -50,6 +50,7 @@ export interface RunPiperChunkOptions {
   piperExe: string;
   voiceModel: string;
   voiceConfig: string | null;
+  useCuda?: boolean;
   text: string;
   outWavPath: string;
   abortSignal?: AbortSignal;
@@ -62,6 +63,7 @@ export async function runPiperChunk(options: RunPiperChunkOptions): Promise<void
     piperExe,
     voiceModel,
     voiceConfig,
+    useCuda,
     text,
     outWavPath,
     abortSignal,
@@ -74,6 +76,9 @@ export async function runPiperChunk(options: RunPiperChunkOptions): Promise<void
   const args = ["--model", voiceModel, "--output_file", outWavPath];
   if (voiceConfig) {
     args.push("--config", voiceConfig);
+  }
+  if (useCuda) {
+    args.push("--cuda");
   }
 
   const runOptions: Parameters<typeof runCommand>[0] = {

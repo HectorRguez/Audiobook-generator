@@ -99,6 +99,10 @@ interface UiStrings {
   languageEnglish: string;
   voiceLabel: string;
   selectedVoiceSummary: string;
+  gpuAccelerationLabel: string;
+  gpuAccelerationEnabled: string;
+  gpuAccelerationDisabled: string;
+  gpuAccelerationHint: string;
   close: string;
   reorderAriaPrefix: string;
   deleteQueueAriaPrefix: string;
@@ -112,6 +116,12 @@ interface UiStrings {
   logJobCanceled: string;
   logStartingWithVoice: string;
   logJobFinished: string;
+  logNvidiaEnabled: string;
+  logNvidiaMissing: string;
+  logCudaUnsupported: string;
+  logNvidiaFallback: string;
+  logModeCpu: string;
+  logModeGpu: string;
   statusLabels: Record<JobStatus, string>;
 }
 
@@ -221,12 +231,33 @@ function localizeKnownLogMessage(message: string, uiStrings: UiStrings) {
     return uiStrings.logJobCanceled;
   }
   if (message.startsWith("Starting job processing with voice ")) {
+    const match = message.match(/^Starting job processing with voice (.+) \((.+)\)\.$/);
+    if (match) {
+      const voiceName = (match[1] || "-").trim();
+      const modeRaw = (match[2] || "").trim();
+      const mode = modeRaw === "NVIDIA GPU" ? uiStrings.logModeGpu : uiStrings.logModeCpu;
+      return uiStrings.logStartingWithVoice.replace("{voice}", voiceName).replace("{mode}", mode);
+    }
     const voiceName = message.replace("Starting job processing with voice ", "").replace(/\.$/, "").trim();
-    return uiStrings.logStartingWithVoice.replace("{voice}", voiceName || "-");
+    return uiStrings.logStartingWithVoice
+      .replace("{voice}", voiceName || "-")
+      .replace("{mode}", uiStrings.logModeCpu);
   }
   if (message.startsWith("Job finished: ")) {
     const outputPath = message.replace("Job finished: ", "").trim();
     return uiStrings.logJobFinished.replace("{path}", outputPath || "-");
+  }
+  if (message === "NVIDIA GPU acceleration enabled for this job.") {
+    return uiStrings.logNvidiaEnabled;
+  }
+  if (message === "NVIDIA GPU was requested but no NVIDIA GPU was detected. Using CPU.") {
+    return uiStrings.logNvidiaMissing;
+  }
+  if (message === "Current Piper binary does not expose CUDA mode. Using CPU.") {
+    return uiStrings.logCudaUnsupported;
+  }
+  if (message === "NVIDIA GPU acceleration failed; falling back to CPU.") {
+    return uiStrings.logNvidiaFallback;
   }
   return message;
 }
@@ -268,6 +299,10 @@ const UI_STRINGS: Record<UiLocale, UiStrings> = {
     languageEnglish: "English",
     voiceLabel: "Voice",
     selectedVoiceSummary: "Current voice: {voice}. This Spanish voice is tuned for long audiobook narration.",
+    gpuAccelerationLabel: "NVIDIA GPU acceleration",
+    gpuAccelerationEnabled: "Enabled",
+    gpuAccelerationDisabled: "Disabled",
+    gpuAccelerationHint: "Uses CUDA when available and falls back to CPU automatically.",
     close: "Close",
     reorderAriaPrefix: "Reorder",
     deleteQueueAriaPrefix: "Delete queue item",
@@ -279,8 +314,14 @@ const UI_STRINGS: Record<UiLocale, UiStrings> = {
     logExtractingChapters: "Extracting EPUB chapters.",
     logJobPaused: "Job paused.",
     logJobCanceled: "Job canceled.",
-    logStartingWithVoice: "Starting job processing with voice {voice}.",
+    logStartingWithVoice: "Starting job processing with voice {voice} ({mode}).",
     logJobFinished: "Job finished: {path}",
+    logNvidiaEnabled: "NVIDIA GPU acceleration enabled for this job.",
+    logNvidiaMissing: "NVIDIA GPU was requested but no NVIDIA GPU was detected. Using CPU.",
+    logCudaUnsupported: "Current Piper binary does not expose CUDA mode. Using CPU.",
+    logNvidiaFallback: "NVIDIA GPU acceleration failed; falling back to CPU.",
+    logModeCpu: "CPU",
+    logModeGpu: "NVIDIA GPU",
     statusLabels: {
       queued: "Queued",
       extracting: "Extracting",
@@ -328,6 +369,10 @@ const UI_STRINGS: Record<UiLocale, UiStrings> = {
     languageEnglish: "Ingles",
     voiceLabel: "Voz",
     selectedVoiceSummary: "Voz actual: {voice}. Esta voz en espanol esta optimizada para narraciones largas de audiolibros.",
+    gpuAccelerationLabel: "Aceleracion GPU NVIDIA",
+    gpuAccelerationEnabled: "Activada",
+    gpuAccelerationDisabled: "Desactivada",
+    gpuAccelerationHint: "Usa CUDA cuando esta disponible y vuelve a CPU automaticamente.",
     close: "Cerrar",
     reorderAriaPrefix: "Reordenar",
     deleteQueueAriaPrefix: "Eliminar elemento de la cola",
@@ -339,8 +384,14 @@ const UI_STRINGS: Record<UiLocale, UiStrings> = {
     logExtractingChapters: "Extrayendo capitulos del EPUB.",
     logJobPaused: "Trabajo pausado.",
     logJobCanceled: "Trabajo cancelado.",
-    logStartingWithVoice: "Iniciando procesamiento con la voz {voice}.",
+    logStartingWithVoice: "Iniciando procesamiento con la voz {voice} ({mode}).",
     logJobFinished: "Trabajo finalizado: {path}",
+    logNvidiaEnabled: "Aceleracion GPU NVIDIA activada para este trabajo.",
+    logNvidiaMissing: "Se solicito GPU NVIDIA pero no se detecto ninguna GPU NVIDIA. Se usara CPU.",
+    logCudaUnsupported: "El binario actual de Piper no expone modo CUDA. Se usara CPU.",
+    logNvidiaFallback: "La aceleracion GPU NVIDIA fallo; cambiando a CPU.",
+    logModeCpu: "CPU",
+    logModeGpu: "GPU NVIDIA",
     statusLabels: {
       queued: "En cola",
       extracting: "Extrayendo",
@@ -487,6 +538,7 @@ export function Dashboard() {
   const [uiLocale, setUiLocale] = useState<UiLocale>("es");
   const [voices, setVoices] = useState<VoiceInfo[]>([]);
   const [defaultVoiceId, setDefaultVoiceId] = useState("");
+  const [useNvidiaGpu, setUseNvidiaGpu] = useState(false);
   const [settingsBusy, setSettingsBusy] = useState(false);
   const queueOrderIdsRef = useRef<string[]>([]);
   const queueContentRef = useRef<HTMLDivElement | null>(null);
@@ -524,6 +576,7 @@ export function Dashboard() {
     const hasStoredVoice = voiceList.some((voice) => voice.id === storedVoiceId);
     const resolvedVoiceId = hasStoredVoice ? storedVoiceId : fallbackVoiceId;
     setDefaultVoiceId(resolvedVoiceId);
+    setUseNvidiaGpu(Boolean(settings.useNvidiaGpu));
     if (resolvedVoiceId && resolvedVoiceId !== storedVoiceId) {
       void api.setSettings({ defaultVoiceId: resolvedVoiceId });
     }
@@ -831,6 +884,25 @@ export function Dashboard() {
       await api.setSettings({ defaultVoiceId: nextVoiceId });
     } catch {
       setDefaultVoiceId(previous);
+    } finally {
+      setSettingsBusy(false);
+    }
+  }
+
+  async function handleGpuAccelerationChange(nextValue: boolean) {
+    const api = getApi();
+    if (!api) {
+      setBridgeReady(false);
+      return;
+    }
+
+    const previous = useNvidiaGpu;
+    setUseNvidiaGpu(nextValue);
+    setSettingsBusy(true);
+    try {
+      await api.setSettings({ useNvidiaGpu: nextValue });
+    } catch {
+      setUseNvidiaGpu(previous);
     } finally {
       setSettingsBusy(false);
     }
@@ -1244,6 +1316,27 @@ export function Dashboard() {
                   </SelectContent>
                 </Select>
                 <p className="text-xs text-muted-foreground">{selectedVoiceSummary}</p>
+              </div>
+              <div className="space-y-2">
+                <label htmlFor="gpu-acceleration" className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                  {uiStrings.gpuAccelerationLabel}
+                </label>
+                <Select
+                  value={useNvidiaGpu ? "enabled" : "disabled"}
+                  onValueChange={(value) => {
+                    void handleGpuAccelerationChange(value === "enabled");
+                  }}
+                  disabled={settingsBusy}
+                >
+                  <SelectTrigger id="gpu-acceleration">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="enabled">{uiStrings.gpuAccelerationEnabled}</SelectItem>
+                    <SelectItem value="disabled">{uiStrings.gpuAccelerationDisabled}</SelectItem>
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">{uiStrings.gpuAccelerationHint}</p>
               </div>
               <div className="flex justify-end">
                 <Button variant="ghost" onClick={() => setIsSettingsOpen(false)}>

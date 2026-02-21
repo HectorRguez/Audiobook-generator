@@ -6,7 +6,7 @@ import type { ChildProcessWithoutNullStreams } from "node:child_process";
 import { extractEpub } from "./epub-extractor";
 import { splitIntoChunks } from "./text-utils";
 import { EtaEstimator } from "./eta-estimator";
-import { killChild } from "./process-utils";
+import { killChild, runCommand } from "./process-utils";
 import {
   runPiperChunk,
   concatWavs,
@@ -25,7 +25,7 @@ import type {
   VoiceInfo
 } from "../types";
 import { Repository } from "../db/repository";
-import type { EnsureRuntimeAssetsOptions } from "./sidecar-bootstrap";
+import { listPlatformManifestVoices, type EnsureRuntimeAssetsOptions } from "./sidecar-bootstrap";
 
 class PausedError extends Error {
   readonly code = "JOB_PAUSED";
@@ -67,6 +67,7 @@ interface ChapterProcessContext {
   totalChars: number;
   voiceModel: string;
   voiceConfig: string | null;
+  useCuda: boolean;
 }
 
 export class QueueManager extends EventEmitter {
@@ -83,6 +84,8 @@ export class QueueManager extends EventEmitter {
 
   private runtimeAssets: RuntimeAssets | null = null;
   private runtimeAssetsPromise: Promise<RuntimeAssets> | null = null;
+  private piperCudaSupport: boolean | null = null;
+  private nvidiaGpuAvailable: boolean | null = null;
 
   constructor(options: QueueManagerOptions) {
     super();
@@ -157,6 +160,36 @@ export class QueueManager extends EventEmitter {
   }
 
   async listVoices(): Promise<VoiceInfo[]> {
+    if (this.runtimeAssets) {
+      const installedVoices = Object.values(this.runtimeAssets.voicesById);
+      if (installedVoices.length > 0) {
+        return installedVoices
+          .sort((a, b) => a.name.localeCompare(b.name, "es", { sensitivity: "base" }))
+          .map((voice) => ({
+            id: voice.id,
+            name: voice.name,
+            modelPath: voice.modelPath,
+            locale: voice.locale,
+            speaker: voice.speaker,
+            quality: voice.quality
+          }));
+      }
+    }
+
+    const manifestVoices = await listPlatformManifestVoices().catch(() => []);
+    if (manifestVoices.length > 0) {
+      return manifestVoices
+        .sort((a, b) => a.name.localeCompare(b.name, "es", { sensitivity: "base" }))
+        .map((voice) => ({
+          id: voice.id,
+          name: voice.name,
+          modelPath: null,
+          locale: voice.locale,
+          speaker: voice.speaker,
+          quality: voice.quality
+        }));
+    }
+
     const assets = await this.bootstrapAssets();
     const allVoices = Object.values(assets.voicesById);
     if (allVoices.length === 0) {
@@ -362,6 +395,57 @@ export class QueueManager extends EventEmitter {
     }
   }
 
+  private async detectPiperCudaSupport(piperExe: string): Promise<boolean> {
+    if (this.piperCudaSupport !== null) {
+      return this.piperCudaSupport;
+    }
+
+    try {
+      const result = await runCommand({
+        command: piperExe,
+        args: ["--help"]
+      });
+      const helpText = `${result.stdout}\n${result.stderr}`.toLowerCase();
+      this.piperCudaSupport = helpText.includes("--cuda");
+    } catch {
+      this.piperCudaSupport = false;
+    }
+
+    return this.piperCudaSupport;
+  }
+
+  private async detectNvidiaGpuAvailability(): Promise<boolean> {
+    if (this.nvidiaGpuAvailable !== null) {
+      return this.nvidiaGpuAvailable;
+    }
+
+    try {
+      const result = await runCommand({
+        command: "nvidia-smi",
+        args: ["-L"]
+      });
+      const text = `${result.stdout}\n${result.stderr}`.toLowerCase();
+      this.nvidiaGpuAvailable = text.includes("gpu");
+    } catch {
+      this.nvidiaGpuAvailable = false;
+    }
+
+    return this.nvidiaGpuAvailable;
+  }
+
+  private shouldFallbackFromCudaError(error: unknown): boolean {
+    const err = asError(error);
+    const text = `${err.message || ""}\n${(err as { stderr?: string }).stderr || ""}`.toLowerCase();
+    return [
+      "--cuda",
+      "cuda",
+      "cudnn",
+      "cublas",
+      "onnxruntime",
+      "execution provider"
+    ].some((token) => text.includes(token));
+  }
+
   private async ensureJobChapters(job: JobRow, workDir: string): Promise<ChapterRow[]> {
     const existingChapters = this.repo.listChapters(job.id);
     if (existingChapters.length > 0) {
@@ -406,7 +490,7 @@ export class QueueManager extends EventEmitter {
   }
 
   private async processChapter(job: JobRow, chapter: ChapterRow, context: ChapterProcessContext): Promise<void> {
-    const { workDir, assets, etaEstimator, totalChars, voiceModel, voiceConfig } = context;
+    const { workDir, assets, etaEstimator, totalChars, voiceModel, voiceConfig, useCuda } = context;
     const text = await fsp.readFile(chapter.text_path, "utf8");
     const chunks = splitIntoChunks(text);
 
@@ -433,6 +517,7 @@ export class QueueManager extends EventEmitter {
 
     const resumeCursor = Math.min(chapter.chunk_cursor, chunks.length);
     let processedChars = this.repo.getJob(job.id)?.processed_chars ?? 0;
+    let chunkUseCuda = useCuda;
 
     for (let chunkIdx = resumeCursor; chunkIdx < chunks.length; chunkIdx += 1) {
       this.checkControlFlags(job.id);
@@ -444,16 +529,37 @@ export class QueueManager extends EventEmitter {
       const chunkPath = path.join(chapterAudioDir, `chunk_${String(chunkIdx).padStart(5, "0")}.wav`);
       const started = Date.now();
 
-      await runPiperChunk({
-        piperExe: assets.piperExe,
-        voiceModel,
-        voiceConfig,
-        text: chunkText,
-        outWavPath: chunkPath,
-        onSpawn: (child) => {
-          this.currentChild = child;
+      try {
+        await runPiperChunk({
+          piperExe: assets.piperExe,
+          voiceModel,
+          voiceConfig,
+          useCuda: chunkUseCuda,
+          text: chunkText,
+          outWavPath: chunkPath,
+          onSpawn: (child) => {
+            this.currentChild = child;
+          }
+        });
+      } catch (error: unknown) {
+        if (!chunkUseCuda || !this.shouldFallbackFromCudaError(error)) {
+          throw error;
         }
-      });
+
+        chunkUseCuda = false;
+        this.log(job.id, "warning", "NVIDIA GPU acceleration failed; falling back to CPU.");
+        await runPiperChunk({
+          piperExe: assets.piperExe,
+          voiceModel,
+          voiceConfig,
+          useCuda: false,
+          text: chunkText,
+          outWavPath: chunkPath,
+          onSpawn: (child) => {
+            this.currentChild = child;
+          }
+        });
+      }
 
       const elapsedMs = Date.now() - started;
       etaEstimator.addSample(chunkText.length, elapsedMs);
@@ -609,10 +715,31 @@ export class QueueManager extends EventEmitter {
     const selectedVoice = assets.voicesById[job.voice_id];
     const voiceModel = selectedVoice?.modelPath || assets.defaultVoiceModel;
     const voiceConfig = selectedVoice?.configPath ?? assets.defaultVoiceConfig;
+    const settings = this.repo.getSettings();
+    const prefersNvidiaGpu = Boolean(settings.useNvidiaGpu);
+    let useCuda = false;
+    if (prefersNvidiaGpu) {
+      const [piperSupportsCuda, hasNvidiaGpu] = await Promise.all([
+        this.detectPiperCudaSupport(assets.piperExe),
+        this.detectNvidiaGpuAvailability()
+      ]);
+      if (piperSupportsCuda && hasNvidiaGpu) {
+        useCuda = true;
+        this.log(job.id, "info", "NVIDIA GPU acceleration enabled for this job.");
+      } else if (!hasNvidiaGpu) {
+        this.log(job.id, "warning", "NVIDIA GPU was requested but no NVIDIA GPU was detected. Using CPU.");
+      } else {
+        this.log(job.id, "warning", "Current Piper binary does not expose CUDA mode. Using CPU.");
+      }
+    }
     const workDir = path.join(this.appDataDir, "work", job.id);
     await fsp.mkdir(workDir, { recursive: true });
 
-    this.log(job.id, "info", `Starting job processing with voice ${selectedVoice?.name || job.voice_id}.`);
+    this.log(
+      job.id,
+      "info",
+      `Starting job processing with voice ${selectedVoice?.name || job.voice_id} (${useCuda ? "NVIDIA GPU" : "CPU"}).`
+    );
 
     const chapters = await this.ensureJobChapters(job, workDir);
     const totalChars = await this.ensureTotalChars(job.id, chapters, job.total_chars);
@@ -630,7 +757,8 @@ export class QueueManager extends EventEmitter {
         etaEstimator,
         totalChars,
         voiceModel,
-        voiceConfig
+        voiceConfig,
+        useCuda
       });
     }
 

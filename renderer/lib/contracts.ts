@@ -80,6 +80,7 @@ export interface AppSettings {
   defaultOutputFormat: "mp3" | "m4b";
   keepIntermediates: boolean;
   maxConcurrentJobs: number;
+  useNvidiaGpu: boolean;
 }
 
 export interface VoiceInfo {
