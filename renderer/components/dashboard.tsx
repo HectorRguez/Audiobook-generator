@@ -328,8 +328,8 @@ export function Dashboard() {
           </div>
           <div className="flex items-center gap-2">
             {!bridgeReady && <Badge variant="destructive">Desktop bridge unavailable</Badge>}
-            {bootstrapStatus && !bootstrapBlockingVisible && (
-              <Badge variant={bootstrapStatus.phase === "error" ? "destructive" : "secondary"}>
+            {bootstrapStatus?.phase === "error" && !bootstrapBlockingVisible && (
+              <Badge variant="destructive">
                 {bootstrapStatus.phase}: {bootstrapStatus.message}
               </Badge>
             )}
