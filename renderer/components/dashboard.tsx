@@ -74,7 +74,7 @@ function formatBootstrapAssetName(assetId?: string) {
     return "FFmpeg";
   }
   if (assetId === "voice-default") {
-    return "Spanish voice (davefx high)";
+    return "Spanish voice (es_ES-sharvard-high)";
   }
   return assetId;
 }

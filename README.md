@@ -16,7 +16,7 @@ Electron + Next (static export) desktop app to process **EPUB -> audiobook** wit
 
 ## Voice default
 
-Default voice target is Spanish male: `es_ES-davefx-high`.
+Default voice target is Spanish (Spain) high quality: `es_ES-sharvard-high`.
 
 ## Development
 
