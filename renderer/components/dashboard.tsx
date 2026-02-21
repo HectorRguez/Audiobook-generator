@@ -46,12 +46,10 @@ function formatEta(seconds: number | null) {
     return "0h 0m";
   }
 
-  const ms = Math.ceil(seconds) * 1000;
-  return prettyMilliseconds(ms, {
-    compact: false,
-    unitCount: 2,
-    secondsDecimalDigits: 0
-  });
+  const totalMinutes = Math.ceil(seconds / 60);
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+  return `${hours}h ${minutes}m`;
 }
 
 function formatDuration(ms: number) {
@@ -232,7 +230,7 @@ export function Dashboard() {
   }, [activeJob, logs]);
   const activeJobDetail = activeJob ? jobDetails[activeJob.id] : undefined;
 
-  const bootstrapDownloadVisible = Boolean(
+  const bootstrapBlockingVisible = Boolean(
     bootstrapStatus && (bootstrapStatus.phase === "downloading" || bootstrapStatus.phase === "extracting")
   );
   const bootstrapProgressValue = bootstrapStatus?.progress === null || bootstrapStatus?.progress === undefined
@@ -330,12 +328,12 @@ export function Dashboard() {
           </div>
           <div className="flex items-center gap-2">
             {!bridgeReady && <Badge variant="destructive">Desktop bridge unavailable</Badge>}
-            {bootstrapStatus && !bootstrapDownloadVisible && (
+            {bootstrapStatus && !bootstrapBlockingVisible && (
               <Badge variant={bootstrapStatus.phase === "error" ? "destructive" : "secondary"}>
                 {bootstrapStatus.phase}: {bootstrapStatus.message}
               </Badge>
             )}
-            <Button onClick={addFiles} disabled={isBusy}>
+            <Button onClick={addFiles} disabled={isBusy || bootstrapBlockingVisible}>
               <Plus className="mr-2 h-4 w-4" /> Add EPUB Files
             </Button>
           </div>
@@ -399,10 +397,20 @@ export function Dashboard() {
                         </Button>
                       )}
 
-                      <Button size="sm" variant="ghost" onClick={() => void getApi()?.deleteJob(job.id, false)}>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        disabled={bootstrapBlockingVisible}
+                        onClick={() => void getApi()?.deleteJob(job.id, false)}
+                      >
                         <Trash2 className="mr-1 h-3.5 w-3.5" /> Delete
                       </Button>
                     </div>
+                    {job.error_message && (
+                      <p className="mt-2 rounded-md border border-destructive/40 bg-destructive/10 px-2 py-1 text-xs text-destructive">
+                        {job.error_message}
+                      </p>
+                    )}
                   </div>
                 ))
               )}
@@ -501,7 +509,7 @@ export function Dashboard() {
                           size="sm"
                           variant="outline"
                           className="mt-2"
-                          disabled={loadingPlaybackId === output.id}
+                          disabled={loadingPlaybackId === output.id || bootstrapBlockingVisible}
                           onClick={() => void loadPlaybackUrl(output.id)}
                         >
                           {loadingPlaybackId === output.id ? "Loading..." : "Test player"}
@@ -509,10 +517,20 @@ export function Dashboard() {
                       )}
                     </div>
                     <div className="flex shrink-0 gap-1">
-                      <Button size="sm" variant="secondary" onClick={() => void getApi()?.downloadGeneratedAudio(output.id)}>
+                      <Button
+                        size="sm"
+                        variant="secondary"
+                        disabled={bootstrapBlockingVisible}
+                        onClick={() => void getApi()?.downloadGeneratedAudio(output.id)}
+                      >
                         <Download className="h-3.5 w-3.5" />
                       </Button>
-                      <Button size="sm" variant="ghost" onClick={() => void getApi()?.openOutputFolder(output.job_id)}>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        disabled={bootstrapBlockingVisible}
+                        onClick={() => void getApi()?.openOutputFolder(output.job_id)}
+                      >
                         <FolderOpen className="h-3.5 w-3.5" />
                       </Button>
                     </div>
@@ -523,18 +541,18 @@ export function Dashboard() {
           </Card>
         </section>
       </div>
-      {bootstrapDownloadVisible && bootstrapStatus && (
-        <div className="pointer-events-none fixed bottom-5 right-5 z-50 w-[360px]">
-          <Card className="border-border/80 bg-card/95 shadow-xl backdrop-blur">
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm">
-                Runtime Assets {bootstrapStatus.itemIndex ?? 0}/{bootstrapStatus.totalItems ?? 0}
+      {bootstrapBlockingVisible && bootstrapStatus && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/70 backdrop-blur-sm">
+          <Card className="w-[min(560px,92vw)] border-border/80 bg-card/95 shadow-2xl">
+            <CardHeader className="pb-2 text-center">
+              <CardTitle className="text-base">
+                Preparing Runtime Assets ({bootstrapStatus.itemIndex ?? 0}/{bootstrapStatus.totalItems ?? 0})
               </CardTitle>
-              <CardDescription className="line-clamp-1">
+              <CardDescription>
                 {formatBootstrapPhase(bootstrapStatus.phase)} {formatBootstrapAssetName(bootstrapStatus.assetId)}
               </CardDescription>
             </CardHeader>
-            <CardContent className="space-y-2">
+            <CardContent className="space-y-3">
               <Progress value={bootstrapProgressValue} />
               <div className="flex items-center justify-between text-xs text-muted-foreground">
                 <span>{bootstrapProgressValue}%</span>
@@ -544,6 +562,9 @@ export function Dashboard() {
                   {typeof bootstrapStatus.totalBytes === "number" ? formatFileSize(bootstrapStatus.totalBytes) : "Unknown"}
                 </span>
               </div>
+              <p className="text-center text-xs text-muted-foreground">
+                The app is temporarily locked until required binaries and voice files finish downloading.
+              </p>
             </CardContent>
           </Card>
         </div>

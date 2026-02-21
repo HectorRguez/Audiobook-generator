@@ -118,7 +118,12 @@ export function runCommand(options: RunCommandOptions): Promise<RunCommandResult
         return;
       }
 
-      const error: CommandError = new Error(`Command failed (${code ?? "unknown"}): ${command} ${args.join(" ")}`);
+      const stderrLine = stderr
+        .split(/\r?\n/)
+        .map((line) => line.trim())
+        .find((line) => line.length > 0);
+      const suffix = stderrLine ? ` :: ${stderrLine}` : "";
+      const error: CommandError = new Error(`Command failed (${code ?? "unknown"}): ${command} ${args.join(" ")}${suffix}`);
       error.stderr = stderr;
       error.stdout = stdout;
       error.code = code;

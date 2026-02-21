@@ -556,11 +556,6 @@ export class QueueManager extends EventEmitter {
     const totalChars = await this.ensureTotalChars(job.id, chapters, job.total_chars);
     const etaEstimator = new EtaEstimator();
 
-    const latestJob = this.repo.getJob(job.id);
-    if (latestJob && latestJob.processed_chars > 0 && totalChars > 0) {
-      etaEstimator.addSample(latestJob.processed_chars, Math.max(1, Date.now() - latestJob.created_at));
-    }
-
     for (const chapter of this.repo.listChapters(job.id)) {
       if (chapter.status === "encoded") {
         continue;

@@ -1,4 +1,5 @@
 import fs from "node:fs/promises";
+import fsSync from "node:fs";
 import path from "node:path";
 import sanitize from "sanitize-filename";
 import { runCommand } from "./process-utils";
@@ -24,6 +25,25 @@ async function getParseFile() {
 
 function quoteForConcat(filePath: string): string {
   return `file '${filePath.replace(/'/g, "'\\''")}'`;
+}
+
+function buildFfmpegEnv(ffmpegExe: string): NodeJS.ProcessEnv | null {
+  if (process.platform === "win32") {
+    return null;
+  }
+
+  const binDir = path.dirname(ffmpegExe);
+  const libDir = path.resolve(binDir, "..", "lib");
+  if (!fsSync.existsSync(libDir)) {
+    return null;
+  }
+
+  const current = process.env.LD_LIBRARY_PATH;
+  const ldLibraryPath = current ? `${libDir}${path.delimiter}${current}` : libDir;
+  return {
+    ...process.env,
+    LD_LIBRARY_PATH: ldLibraryPath
+  };
 }
 
 export interface RunPiperChunkOptions {
@@ -99,6 +119,10 @@ export async function concatWavs(options: ConcatWavsOptions): Promise<void> {
     command: ffmpegExe,
     args: ["-y", "-f", "concat", "-safe", "0", "-i", concatListPath, "-c", "copy", outWavPath]
   };
+  const ffmpegEnv = buildFfmpegEnv(ffmpegExe);
+  if (ffmpegEnv) {
+    runOptions.env = ffmpegEnv;
+  }
   if (abortSignal) {
     runOptions.abortSignal = abortSignal;
   }
@@ -148,6 +172,10 @@ export async function encodeFinalAudio(options: EncodeFinalAudioOptions): Promis
     command: ffmpegExe,
     args
   };
+  const ffmpegEnv = buildFfmpegEnv(ffmpegExe);
+  if (ffmpegEnv) {
+    runOptions.env = ffmpegEnv;
+  }
   if (abortSignal) {
     runOptions.abortSignal = abortSignal;
   }

@@ -23,8 +23,8 @@
         }
       ],
       "paths": {
-        "piperExe": "piper/piper.exe",
-        "ffmpegExe": "ffmpeg/ffmpeg.exe",
+        "piperExe": "piper/piper/piper.exe",
+        "ffmpegExe": "ffmpeg/ffmpeg-master-latest-win64-gpl-shared/bin/ffmpeg.exe",
         "defaultVoiceModel": "voice-default/es_ES-davefx-medium.onnx",
         "defaultVoiceConfig": "voice-default/es_ES-davefx-medium.onnx.json"
       }
@@ -51,8 +51,8 @@
         }
       ],
       "paths": {
-        "piperExe": "piper/piper",
-        "ffmpegExe": "ffmpeg/ffmpeg",
+        "piperExe": "piper/piper/piper",
+        "ffmpegExe": "ffmpeg/ffmpeg-master-latest-linux64-gpl-shared/bin/ffmpeg",
         "defaultVoiceModel": "voice-default/es_ES-davefx-medium.onnx",
         "defaultVoiceConfig": "voice-default/es_ES-davefx-medium.onnx.json"
       }

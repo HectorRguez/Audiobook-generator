@@ -23,6 +23,14 @@ function exists(filePath: string): boolean {
   }
 }
 
+function isFile(filePath: string): boolean {
+  try {
+    return fs.statSync(filePath).isFile();
+  } catch {
+    return false;
+  }
+}
+
 interface DownloadProgress {
   downloadedBytes: number;
   totalBytes: number | null;
@@ -188,6 +196,22 @@ function resolvePaths(baseDir: string, pathsConfig: SidecarPlatformConfig["paths
   };
 }
 
+async function ensureExecutableBinaries(paths: Omit<RuntimeAssets, "source">): Promise<void> {
+  if (process.platform === "win32") {
+    return;
+  }
+
+  const executablePaths = [paths.piperExe, paths.ffmpegExe];
+  for (const executablePath of executablePaths) {
+    if (!isFile(executablePath)) {
+      continue;
+    }
+    // Ensure sidecar binaries can be spawned on Linux/macOS even if archive permissions were lost.
+    // eslint-disable-next-line no-await-in-loop
+    await fsp.chmod(executablePath, 0o755);
+  }
+}
+
 function readManifest(): Promise<SidecarManifest> {
   return fsp.readFile(getManifestPath(), "utf8").then((raw) => JSON.parse(raw) as SidecarManifest);
 }
@@ -224,9 +248,13 @@ export async function ensureRuntimeAssets(options: EnsureRuntimeAssetsOptions): 
 
   const allPathsExist = Object.values(paths)
     .filter((targetPath): targetPath is string => Boolean(targetPath))
-    .every((targetPath) => exists(targetPath));
+    .every((targetPath) => isFile(targetPath));
 
-  if (exists(markerPath) && allPathsExist) {
+  if (allPathsExist) {
+    await ensureExecutableBinaries(paths);
+    if (!exists(markerPath)) {
+      await fsp.writeFile(markerPath, JSON.stringify({ version: manifest.version, readyAt: Date.now() }, null, 2));
+    }
     return { ...paths, source: "cache" };
   }
 
@@ -304,10 +332,12 @@ export async function ensureRuntimeAssets(options: EnsureRuntimeAssetsOptions): 
 
   const requiredPaths = Object.values(paths).filter((targetPath): targetPath is string => Boolean(targetPath));
   for (const required of requiredPaths) {
-    if (!exists(required)) {
+    if (!isFile(required)) {
       throw new Error(`Runtime asset missing after bootstrap: ${required}`);
     }
   }
+
+  await ensureExecutableBinaries(paths);
 
   await fsp.writeFile(markerPath, JSON.stringify({ version: manifest.version, readyAt: Date.now() }, null, 2));
 
