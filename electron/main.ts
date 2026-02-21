@@ -205,6 +205,16 @@ function registerIpcHandlers(): void {
   });
 
   ipcMain.handle(commands.LIST_GENERATED, async () => requireQueueManager().listGeneratedAudios());
+  ipcMain.handle(commands.DELETE_GENERATED, async (_event, outputId: string) => {
+    const qm = requireQueueManager();
+    const output = qm.getGeneratedAudio(outputId);
+    if (!output) {
+      return qm.listGeneratedAudios();
+    }
+    await fs.rm(output.file_path, { force: true }).catch(() => {});
+    qm.deleteGeneratedAudio(outputId);
+    return qm.listGeneratedAudios();
+  });
   ipcMain.handle(commands.GET_GENERATED_PLAYBACK_URL, async (_event, outputId: string) => {
     const qm = requireQueueManager();
     const output = qm.getGeneratedAudio(outputId);

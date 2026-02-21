@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Clock3,
   Download,
@@ -116,8 +116,14 @@ export function Dashboard() {
   const [bootstrapStatus, setBootstrapStatus] = useState<BootstrapStatus | null>(null);
   const [logs, setLogs] = useState<LogEvent[]>([]);
   const [draggingId, setDraggingId] = useState<string | null>(null);
+  const [dragOverId, setDragOverId] = useState<string | null>(null);
+  const [queueOrder, setQueueOrder] = useState<QueueJob[]>([]);
   const [isBusy, setIsBusy] = useState(false);
   const [bridgeReady, setBridgeReady] = useState(true);
+  const [showQueueBottomFade, setShowQueueBottomFade] = useState(false);
+  const [showGeneratedBottomFade, setShowGeneratedBottomFade] = useState(false);
+  const queueContentRef = useRef<HTMLDivElement | null>(null);
+  const generatedContentRef = useRef<HTMLDivElement | null>(null);
 
   function getApi() {
     return (window as { audiobook?: Window["audiobook"] }).audiobook;
@@ -202,18 +208,27 @@ export function Dashboard() {
     };
   }, [refresh]);
 
-  const queueJobs = useMemo(
-    () => jobs.filter((job) => !["done", "canceled"].includes(job.status)),
+  const runningJob = useMemo(
+    () => jobs.find((job) => ["extracting", "processing", "encoding"].includes(job.status)) || null,
     [jobs]
   );
 
   const activeJob = useMemo(
     () =>
-      jobs.find((job) => ["extracting", "processing", "encoding"].includes(job.status)) ||
-      jobs.find((job) => job.status === "queued") ||
+      runningJob ||
+      jobs.find((job) => ["queued", "paused", "error"].includes(job.status)) ||
       null,
-    [jobs]
+    [jobs, runningJob]
   );
+
+  const queueJobs = useMemo(
+    () =>
+      jobs.filter(
+        (job) => ["queued", "paused", "error"].includes(job.status) && job.id !== activeJob?.id
+      ),
+    [activeJob?.id, jobs]
+  );
+  const visibleQueueJobs = draggingId ? queueOrder : queueJobs;
 
   const activeLog = useMemo(() => {
     if (!activeJob) {
@@ -223,12 +238,30 @@ export function Dashboard() {
   }, [activeJob, logs]);
   const activeJobDetail = activeJob ? jobDetails[activeJob.id] : undefined;
 
+  useEffect(() => {
+    if (draggingId) {
+      return;
+    }
+    setQueueOrder(queueJobs);
+  }, [draggingId, queueJobs]);
+
   const bootstrapBlockingVisible = Boolean(
     bootstrapStatus && (bootstrapStatus.phase === "downloading" || bootstrapStatus.phase === "extracting")
   );
   const bootstrapProgressValue = bootstrapStatus?.progress === null || bootstrapStatus?.progress === undefined
     ? (bootstrapStatus?.phase === "extracting" ? 100 : 10)
     : Math.round(bootstrapStatus.progress * 100);
+
+  const updateBottomFade = useCallback(
+    (node: HTMLDivElement | null, setVisible: (value: boolean) => void) => {
+      if (!node) {
+        setVisible(false);
+        return;
+      }
+      setVisible(node.scrollTop + node.clientHeight < node.scrollHeight - 2);
+    },
+    []
+  );
 
   useEffect(() => {
     const api = getApi();
@@ -252,6 +285,50 @@ export function Dashboard() {
       });
     });
   }, [bootstrapBlockingVisible, generated, playbackUrls]);
+
+  useEffect(() => {
+    const node = queueContentRef.current;
+    if (!node) {
+      setShowQueueBottomFade(false);
+      return;
+    }
+
+    const handleUpdate = () => updateBottomFade(node, setShowQueueBottomFade);
+    handleUpdate();
+
+    node.addEventListener("scroll", handleUpdate, { passive: true });
+    window.addEventListener("resize", handleUpdate);
+    const resizeObserver = new ResizeObserver(handleUpdate);
+    resizeObserver.observe(node);
+
+    return () => {
+      node.removeEventListener("scroll", handleUpdate);
+      window.removeEventListener("resize", handleUpdate);
+      resizeObserver.disconnect();
+    };
+  }, [updateBottomFade, visibleQueueJobs]);
+
+  useEffect(() => {
+    const node = generatedContentRef.current;
+    if (!node) {
+      setShowGeneratedBottomFade(false);
+      return;
+    }
+
+    const handleUpdate = () => updateBottomFade(node, setShowGeneratedBottomFade);
+    handleUpdate();
+
+    node.addEventListener("scroll", handleUpdate, { passive: true });
+    window.addEventListener("resize", handleUpdate);
+    const resizeObserver = new ResizeObserver(handleUpdate);
+    resizeObserver.observe(node);
+
+    return () => {
+      node.removeEventListener("scroll", handleUpdate);
+      window.removeEventListener("resize", handleUpdate);
+      resizeObserver.disconnect();
+    };
+  }, [generated, updateBottomFade]);
 
   async function addFiles() {
     const api = getApi();
@@ -294,25 +371,57 @@ export function Dashboard() {
     }
   }
 
-  async function reorderQueue(targetId: string) {
+  async function handleDeleteGenerated(outputId: string) {
     const api = getApi();
     if (!api) {
       setBridgeReady(false);
       return;
     }
 
+    await api.deleteGeneratedAudio(outputId);
+    setPlaybackUrls((current) => {
+      if (!current[outputId]) {
+        return current;
+      }
+      const next = { ...current };
+      delete next[outputId];
+      return next;
+    });
+  }
+
+  function handleQueueDragStart(jobId: string) {
+    setDraggingId(jobId);
+    setDragOverId(jobId);
+    setQueueOrder(queueJobs);
+  }
+
+  function handleQueueDragEnter(targetId: string) {
     if (!draggingId || draggingId === targetId) {
       return;
     }
+    setDragOverId(targetId);
+    setQueueOrder((current) => reorder(current.length > 0 ? current : queueJobs, draggingId, targetId));
+  }
 
-    const next = reorder(queueJobs, draggingId, targetId);
-    setJobs((current) => {
-      const map = new Map(current.map((job) => [job.id, job]));
-      return next.map((job) => map.get(job.id) ?? job).concat(current.filter((job) => !next.find((item) => item.id === job.id)));
-    });
+  function resetQueueDragState() {
     setDraggingId(null);
+    setDragOverId(null);
+    setQueueOrder(queueJobs);
+  }
 
-    await api.reorderQueue(next.map((job) => job.id));
+  async function commitQueueOrder() {
+    const api = getApi();
+    if (!api) {
+      setBridgeReady(false);
+      resetQueueDragState();
+      return;
+    }
+
+    const nextOrder = queueOrder.length > 0 ? queueOrder : queueJobs;
+    if (nextOrder.length > 1) {
+      await api.reorderQueue(nextOrder.map((job) => job.id));
+    }
+    resetQueueDragState();
   }
 
   return (
@@ -339,27 +448,42 @@ export function Dashboard() {
             onDragOver={(event) => event.preventDefault()}
             onDrop={(event) => {
               event.preventDefault();
-              void handleDrop(event.dataTransfer.files);
+              if (event.dataTransfer.files.length > 0) {
+                void handleDrop(event.dataTransfer.files);
+              }
             }}
           >
             <CardHeader>
               <CardTitle>Processing Queue</CardTitle>
               <CardDescription>Drag rows to reorder. Drop EPUB files here to enqueue.</CardDescription>
             </CardHeader>
-            <CardContent className="min-h-0 flex-1 space-y-2 overflow-y-auto pb-4">
-              {queueJobs.length === 0 ? (
+            <CardContent ref={queueContentRef} className="relative min-h-0 flex-1 space-y-2 overflow-y-auto pb-4">
+              {visibleQueueJobs.length === 0 ? (
                 <p className="rounded-lg border border-dashed border-border/70 bg-background/30 p-4 text-sm text-muted-foreground">
                   Queue is empty. Add one or more EPUB files.
                 </p>
               ) : (
-                queueJobs.map((job) => (
+                visibleQueueJobs.map((job) => (
                   <div
                     key={job.id}
                     draggable
-                    onDragStart={() => setDraggingId(job.id)}
+                    onDragStart={() => handleQueueDragStart(job.id)}
+                    onDragEnter={() => handleQueueDragEnter(job.id)}
                     onDragOver={(event) => event.preventDefault()}
-                    onDrop={() => void reorderQueue(job.id)}
-                    className="rounded-lg border border-border/70 bg-background/50 p-3"
+                    onDrop={(event) => {
+                      event.preventDefault();
+                      event.stopPropagation();
+                      void commitQueueOrder();
+                    }}
+                    onDragEnd={() => {
+                      if (!draggingId) {
+                        return;
+                      }
+                      resetQueueDragState();
+                    }}
+                    className={`rounded-lg border border-border/70 bg-background/50 p-3 transition-all duration-150 ${
+                      dragOverId === job.id ? "scale-[1.01] border-primary/50 shadow-sm" : ""
+                    }`}
                   >
                     <div className="flex items-start justify-between gap-2">
                       <div className="min-w-0">
@@ -373,24 +497,6 @@ export function Dashboard() {
                     </div>
 
                     <div className="mt-2 flex flex-wrap gap-2">
-                      {job.status === "queued" || job.status === "processing" || job.status === "extracting" || job.status === "encoding" ? (
-                        <Button size="sm" variant="secondary" onClick={() => void getApi()?.pauseJob(job.id)}>
-                          <Pause className="mr-1 h-3.5 w-3.5" /> Pause
-                        </Button>
-                      ) : null}
-
-                      {(job.status === "paused" || job.status === "error") && (
-                        <Button size="sm" variant="secondary" onClick={() => void getApi()?.resumeJob(job.id)}>
-                          <Play className="mr-1 h-3.5 w-3.5" /> Resume
-                        </Button>
-                      )}
-
-                      {!["done", "canceled"].includes(job.status) && (
-                        <Button size="sm" variant="destructive" onClick={() => void getApi()?.cancelJob(job.id)}>
-                          <XCircle className="mr-1 h-3.5 w-3.5" /> Cancel
-                        </Button>
-                      )}
-
                       <Button
                         size="sm"
                         variant="ghost"
@@ -408,6 +514,11 @@ export function Dashboard() {
                   </div>
                 ))
               )}
+              <div
+                className={`pointer-events-none absolute bottom-0 left-0 right-0 h-10 bg-gradient-to-t from-background/30 via-background/10 to-transparent transition-opacity duration-200 ${
+                  showQueueBottomFade ? "opacity-100" : "opacity-0"
+                }`}
+              />
             </CardContent>
           </Card>
 
@@ -418,14 +529,40 @@ export function Dashboard() {
               ) : (
                 <>
                   <div className="flex flex-col items-center gap-3 text-center">
-                    <div className="relative rounded-2xl border border-border/70 bg-background/80 p-6">
+                    <div className="relative overflow-visible rounded-2xl border border-border/70 bg-background/80 p-6">
                       <FileAudio2 className="h-14 w-14 text-primary" />
-                      <Badge variant={statusVariant(activeJob.status)} className="absolute -right-3 -top-3">
+                      <Badge variant={statusVariant(activeJob.status)} className="absolute right-2 top-2">
                         {activeJob.status}
                       </Badge>
                     </div>
                     <p className="line-clamp-2 text-sm font-semibold">{activeJob.title}</p>
                     <p className="line-clamp-1 text-xs text-muted-foreground">{activeJob.source_name}</p>
+                  </div>
+
+                  <div className="flex flex-wrap items-center justify-center gap-2">
+                    {["queued", "extracting", "processing", "encoding"].includes(activeJob.status) && (
+                      <Button size="sm" variant="secondary" onClick={() => void getApi()?.pauseJob(activeJob.id)}>
+                        <Pause className="mr-1 h-3.5 w-3.5" /> Pause
+                      </Button>
+                    )}
+                    {["paused", "error"].includes(activeJob.status) && (
+                      <Button size="sm" variant="secondary" onClick={() => void getApi()?.resumeJob(activeJob.id)}>
+                        <Play className="mr-1 h-3.5 w-3.5" /> Resume
+                      </Button>
+                    )}
+                    {!["done", "canceled"].includes(activeJob.status) && (
+                      <Button size="sm" variant="destructive" onClick={() => void getApi()?.cancelJob(activeJob.id)}>
+                        <XCircle className="mr-1 h-3.5 w-3.5" /> Cancel
+                      </Button>
+                    )}
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      disabled={bootstrapBlockingVisible || runningJob?.id === activeJob.id}
+                      onClick={() => void getApi()?.deleteJob(activeJob.id, false)}
+                    >
+                      <Trash2 className="mr-1 h-3.5 w-3.5" /> Delete
+                    </Button>
                   </div>
 
                   <div className="space-y-2">
@@ -479,7 +616,7 @@ export function Dashboard() {
               <CardTitle>Generated Audios</CardTitle>
               <CardDescription>Newest first. Export any completed audiobook.</CardDescription>
             </CardHeader>
-            <CardContent className="min-h-0 flex-1 space-y-2 overflow-y-auto pb-4">
+            <CardContent ref={generatedContentRef} className="relative min-h-0 flex-1 space-y-2 overflow-y-auto pb-4">
               {generated.length === 0 ? (
                 <p className="text-sm text-muted-foreground">No generated audiobooks yet.</p>
               ) : (
@@ -489,14 +626,24 @@ export function Dashboard() {
                       <div className="min-w-0">
                         <p className="truncate text-sm font-medium">{output.title}</p>
                       </div>
-                      <Button
-                        size="sm"
-                        variant="secondary"
-                        disabled={bootstrapBlockingVisible}
-                        onClick={() => void getApi()?.downloadGeneratedAudio(output.id)}
-                      >
-                        <Download className="h-3.5 w-3.5" />
-                      </Button>
+                      <div className="flex items-center gap-1">
+                        <Button
+                          size="sm"
+                          variant="secondary"
+                          disabled={bootstrapBlockingVisible}
+                          onClick={() => void getApi()?.downloadGeneratedAudio(output.id)}
+                        >
+                          <Download className="h-3.5 w-3.5" />
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          disabled={bootstrapBlockingVisible}
+                          onClick={() => void handleDeleteGenerated(output.id)}
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </Button>
+                      </div>
                     </div>
                     <audio
                       controls
@@ -509,6 +656,11 @@ export function Dashboard() {
                   </div>
                 ))
               )}
+              <div
+                className={`pointer-events-none absolute bottom-0 left-0 right-0 h-10 bg-gradient-to-t from-background/30 via-background/10 to-transparent transition-opacity duration-200 ${
+                  showGeneratedBottomFade ? "opacity-100" : "opacity-0"
+                }`}
+              />
             </CardContent>
           </Card>
         </section>

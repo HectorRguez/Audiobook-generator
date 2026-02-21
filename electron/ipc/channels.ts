@@ -17,6 +17,7 @@ export const commands = {
   CANCEL_JOB: "cancel-job",
   DELETE_JOB: "delete-job",
   LIST_GENERATED: "list-generated-audios",
+  DELETE_GENERATED: "delete-generated-audio",
   GET_GENERATED_PLAYBACK_URL: "get-generated-playback-url",
   DOWNLOAD_GENERATED: "download-generated-audio",
   OPEN_OUTPUT_FOLDER: "open-output-folder",

@@ -198,6 +198,11 @@ export class QueueManager extends EventEmitter {
     return this.repo.getOutputsByJob(jobId);
   }
 
+  deleteGeneratedAudio(outputId: string): void {
+    this.repo.deleteOutput(outputId);
+    this.emitGeneratedAudios();
+  }
+
   getJob(jobId: string): JobDetail | null {
     return this.repo.getJobDetail(jobId);
   }
@@ -591,10 +596,15 @@ export class QueueManager extends EventEmitter {
         await this.processJob(nextJob);
       } catch (error: unknown) {
         const err = asError(error);
-        if (err instanceof PausedError || err.code === "JOB_PAUSED") {
+        const isPaused = err instanceof PausedError || err.code === "JOB_PAUSED";
+        const isCanceled = this.cancelRequested.has(nextJob.id)
+          || err instanceof CanceledError
+          || err.code === "JOB_CANCELED";
+
+        if (isPaused) {
           this.repo.setJobPaused(nextJob.id);
           this.log(nextJob.id, "info", "Job paused.");
-        } else if (err instanceof CanceledError || err.code === "JOB_CANCELED") {
+        } else if (isCanceled) {
           this.repo.setJobCanceled(nextJob.id);
           this.log(nextJob.id, "info", "Job canceled.");
         } else {

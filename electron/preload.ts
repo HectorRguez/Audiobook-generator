@@ -27,6 +27,7 @@ interface PreloadApi {
   cancelJob: (jobId: string) => Promise<JobDetail | null>;
   deleteJob: (jobId: string, deleteOutputs?: boolean) => Promise<JobRow[]>;
   listGeneratedAudios: () => Promise<OutputRow[]>;
+  deleteGeneratedAudio: (outputId: string) => Promise<OutputRow[]>;
   getGeneratedPlaybackUrl: (outputId: string) => Promise<string>;
   downloadGeneratedAudio: (outputId: string) => Promise<DownloadResult>;
   openOutputFolder: (jobId: string) => Promise<void>;
@@ -58,6 +59,7 @@ const api: PreloadApi = {
   cancelJob: (jobId) => ipcRenderer.invoke(commands.CANCEL_JOB, jobId),
   deleteJob: (jobId, deleteOutputs) => ipcRenderer.invoke(commands.DELETE_JOB, jobId, deleteOutputs),
   listGeneratedAudios: () => ipcRenderer.invoke(commands.LIST_GENERATED),
+  deleteGeneratedAudio: (outputId) => ipcRenderer.invoke(commands.DELETE_GENERATED, outputId),
   getGeneratedPlaybackUrl: (outputId) => ipcRenderer.invoke(commands.GET_GENERATED_PLAYBACK_URL, outputId),
   downloadGeneratedAudio: (outputId) => ipcRenderer.invoke(commands.DOWNLOAD_GENERATED, outputId),
   openOutputFolder: (jobId) => ipcRenderer.invoke(commands.OPEN_OUTPUT_FOLDER, jobId),

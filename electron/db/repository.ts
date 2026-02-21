@@ -124,6 +124,7 @@ export class Repository {
   private readonly listOutputsStmt: PreparedStatement;
   private readonly getOutputStmt: PreparedStatement;
   private readonly getOutputsByJobStmt: PreparedStatement;
+  private readonly deleteOutputStmt: PreparedStatement;
 
   private readonly insertLogStmt: PreparedStatement;
   private readonly recoverJobsStmt: PreparedStatement;
@@ -249,6 +250,7 @@ export class Repository {
     this.listOutputsStmt = asStatement(this.db.prepare("SELECT * FROM outputs ORDER BY created_at DESC"));
     this.getOutputStmt = asStatement(this.db.prepare("SELECT * FROM outputs WHERE id = ?"));
     this.getOutputsByJobStmt = asStatement(this.db.prepare("SELECT * FROM outputs WHERE job_id = ?"));
+    this.deleteOutputStmt = asStatement(this.db.prepare("DELETE FROM outputs WHERE id = ?"));
 
     this.insertLogStmt = asStatement(this.db.prepare("INSERT INTO logs (job_id, ts, level, message) VALUES (?, ?, ?, ?)"));
 
@@ -505,6 +507,10 @@ export class Repository {
 
   getOutputsByJob(jobId: string): OutputRow[] {
     return asOutputRows(this.getOutputsByJobStmt.all(jobId));
+  }
+
+  deleteOutput(outputId: string): void {
+    this.deleteOutputStmt.run(outputId);
   }
 
   addLog(jobId: string, level: string, message: string): void {
