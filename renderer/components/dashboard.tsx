@@ -515,7 +515,14 @@ export function Dashboard() {
                         <Download className="h-3.5 w-3.5" />
                       </Button>
                     </div>
-                    <audio controls preload="none" className="mt-3 h-9 w-full" src={playbackUrls[output.id]} />
+                    <audio
+                      controls
+                      preload="metadata"
+                      className="mt-2 h-9 w-full"
+                      src={playbackUrls[output.id]}
+                      controlsList="nodownload noplaybackrate noremoteplayback"
+                      onContextMenu={(event) => event.preventDefault()}
+                    />
                   </div>
                 ))
               )}
