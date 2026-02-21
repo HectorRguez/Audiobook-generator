@@ -72,6 +72,9 @@ export interface VoiceInfo {
   id: string;
   name: string;
   modelPath: string | null;
+  locale?: string;
+  speaker?: string;
+  quality?: "x_low" | "low" | "medium" | "high" | string;
 }
 
 export interface BootstrapStatus {
@@ -90,7 +93,18 @@ export interface RuntimeAssets {
   ffmpegExe: string;
   defaultVoiceModel: string;
   defaultVoiceConfig: string | null;
+  voicesById: Record<string, RuntimeVoiceAsset>;
   source: "env" | "cache" | "download";
+}
+
+export interface RuntimeVoiceAsset {
+  id: string;
+  name: string;
+  locale: string;
+  speaker: string;
+  quality: string;
+  modelPath: string;
+  configPath: string | null;
 }
 
 export interface AppSettings {
@@ -149,10 +163,22 @@ export interface SidecarPlatformConfig {
     ffmpegExe: string;
     defaultVoiceModel: string;
     defaultVoiceConfig?: string;
+    voicesRoot?: string;
   };
+  voices?: SidecarVoiceDefinition[];
 }
 
 export interface SidecarManifest {
   version: string;
   platforms: Record<string, SidecarPlatformConfig>;
+}
+
+export interface SidecarVoiceDefinition {
+  id: string;
+  name: string;
+  locale: string;
+  speaker: string;
+  quality: string;
+  modelPath: string;
+  configPath?: string;
 }

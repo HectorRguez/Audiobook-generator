@@ -2,7 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import type { SidecarManifest } from "../electron/types";
 
-const manifestPath = path.join(__dirname, "..", "electron", "assets", "sidecar-manifest.json");
+const manifestPath = path.join(process.cwd(), "electron", "assets", "sidecar-manifest.json");
 const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8")) as SidecarManifest;
 
 if (!manifest.version || typeof manifest.version !== "string") {
@@ -34,6 +34,21 @@ for (const [platformKey, platformConfig] of Object.entries(manifest.platforms ||
 
   if (!platformConfig.paths?.piperExe || !platformConfig.paths?.ffmpegExe || !platformConfig.paths?.defaultVoiceModel) {
     throw new Error(`Platform ${platformKey} missing required paths block.`);
+  }
+
+  if (!Array.isArray(platformConfig.voices) || platformConfig.voices.length === 0) {
+    throw new Error(`Platform ${platformKey} has no voice definitions.`);
+  }
+
+  const voiceIds = new Set<string>();
+  for (const voice of platformConfig.voices) {
+    if (!voice.id || !voice.name || !voice.locale || !voice.speaker || !voice.quality || !voice.modelPath) {
+      throw new Error(`Invalid voice definition in ${platformKey}: ${JSON.stringify(voice)}`);
+    }
+    if (voiceIds.has(voice.id)) {
+      throw new Error(`Duplicate voice id in ${platformKey}: ${voice.id}`);
+    }
+    voiceIds.add(voice.id);
   }
 }
 

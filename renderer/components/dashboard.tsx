@@ -33,12 +33,14 @@ import {
   XCircle
 } from "lucide-react";
 import type {
+  AppSettings,
   BootstrapStatus,
   GeneratedAudio,
   JobDetail,
   JobStatus,
   LogEvent,
-  QueueJob
+  QueueJob,
+  VoiceInfo
 } from "@/lib/contracts";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -92,10 +94,11 @@ interface UiStrings {
   keepAudio: string;
   deletePermanently: string;
   settingsTitle: string;
-  settingsDescription: string;
   languageLabel: string;
   languageSpanish: string;
   languageEnglish: string;
+  voiceLabel: string;
+  selectedVoiceSummary: string;
   close: string;
   reorderAriaPrefix: string;
   deleteQueueAriaPrefix: string;
@@ -144,10 +147,31 @@ function formatBootstrapAssetName(assetId: string | undefined, uiStrings: UiStri
   if (assetId === "ffmpeg") {
     return "FFmpeg";
   }
-  if (assetId === "voice-default") {
+  if (assetId === "voice-default" || assetId.startsWith("voice-")) {
     return uiStrings.spanishVoice;
   }
   return assetId;
+}
+
+function humanizeSpeakerName(value: string): string {
+  const cleaned = value.replace(/[_-]+/g, " ").trim();
+  if (!cleaned) {
+    return value;
+  }
+  return cleaned.replace(/\b\w/g, (char) => char.toUpperCase());
+}
+
+function displayVoiceName(voice: VoiceInfo): string {
+  if (voice.name && voice.name.trim().length > 0) {
+    return voice.name.trim();
+  }
+
+  const match = voice.id.match(/^[a-z]{2}_[A-Z]{2}-(.+)-([a-z_]+)$/);
+  if (match) {
+    return humanizeSpeakerName(match[1] || voice.id);
+  }
+
+  return humanizeSpeakerName(voice.id);
 }
 
 function formatBootstrapPhase(phase: BootstrapStatus["phase"], uiStrings: UiStrings) {
@@ -195,7 +219,7 @@ const UI_STRINGS: Record<UiLocale, UiStrings> = {
     estimatingEta: "Estimating...",
     runtimeAsset: "Runtime asset",
     piperEngine: "Piper engine",
-    spanishVoice: "Spanish voice (es_ES-carlfm-high)",
+    spanishVoice: "Spanish voice pack (es_ES)",
     bootstrapPhaseDownloading: "Downloading",
     bootstrapPhaseExtracting: "Extracting",
     bootstrapPhaseReady: "Ready",
@@ -209,10 +233,11 @@ const UI_STRINGS: Record<UiLocale, UiStrings> = {
     keepAudio: "Keep Audio",
     deletePermanently: "Delete Permanently",
     settingsTitle: "Settings",
-    settingsDescription: "Choose your interface language.",
     languageLabel: "Language",
     languageSpanish: "Spanish",
     languageEnglish: "English",
+    voiceLabel: "Voice",
+    selectedVoiceSummary: "Current voice: {voice}. This Spanish voice is tuned for long audiobook narration.",
     close: "Close",
     reorderAriaPrefix: "Reorder",
     deleteQueueAriaPrefix: "Delete queue item",
@@ -248,7 +273,7 @@ const UI_STRINGS: Record<UiLocale, UiStrings> = {
     estimatingEta: "Estimando...",
     runtimeAsset: "Recurso del runtime",
     piperEngine: "Motor Piper",
-    spanishVoice: "Voz en espanol (es_ES-carlfm-high)",
+    spanishVoice: "Paquete de voces en espanol (es_ES)",
     bootstrapPhaseDownloading: "Descargando",
     bootstrapPhaseExtracting: "Extrayendo",
     bootstrapPhaseReady: "Listo",
@@ -262,10 +287,11 @@ const UI_STRINGS: Record<UiLocale, UiStrings> = {
     keepAudio: "Conservar audio",
     deletePermanently: "Eliminar permanentemente",
     settingsTitle: "Ajustes",
-    settingsDescription: "Elige el idioma de la interfaz.",
     languageLabel: "Idioma",
     languageSpanish: "Espanol",
     languageEnglish: "Ingles",
+    voiceLabel: "Voz",
+    selectedVoiceSummary: "Voz actual: {voice}. Esta voz en espanol esta optimizada para narraciones largas de audiolibros.",
     close: "Cerrar",
     reorderAriaPrefix: "Reordenar",
     deleteQueueAriaPrefix: "Eliminar elemento de la cola",
@@ -417,6 +443,9 @@ export function Dashboard() {
   const [deletingGeneratedId, setDeletingGeneratedId] = useState<string | null>(null);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [uiLocale, setUiLocale] = useState<UiLocale>("es");
+  const [voices, setVoices] = useState<VoiceInfo[]>([]);
+  const [defaultVoiceId, setDefaultVoiceId] = useState("");
+  const [settingsBusy, setSettingsBusy] = useState(false);
   const queueOrderIdsRef = useRef<string[]>([]);
   const queueContentRef = useRef<HTMLDivElement | null>(null);
   const generatedContentRef = useRef<HTMLDivElement | null>(null);
@@ -441,6 +470,23 @@ export function Dashboard() {
     setGenerated(nextGenerated);
   }, []);
 
+  const refreshVoiceSettings = useCallback(async (api: NonNullable<ReturnType<typeof getApi>>) => {
+    const [voiceList, settings] = await Promise.all([
+      api.listVoices().catch(() => [] as VoiceInfo[]),
+      api.getSettings().catch(() => ({} as Partial<AppSettings>))
+    ]);
+    setVoices(voiceList);
+
+    const storedVoiceId = typeof settings.defaultVoiceId === "string" ? settings.defaultVoiceId : "";
+    const fallbackVoiceId = voiceList[0]?.id || "";
+    const hasStoredVoice = voiceList.some((voice) => voice.id === storedVoiceId);
+    const resolvedVoiceId = hasStoredVoice ? storedVoiceId : fallbackVoiceId;
+    setDefaultVoiceId(resolvedVoiceId);
+    if (resolvedVoiceId && resolvedVoiceId !== storedVoiceId) {
+      void api.setSettings({ defaultVoiceId: resolvedVoiceId });
+    }
+  }, []);
+
   useEffect(() => {
     let attached = false;
     let pollTimer: ReturnType<typeof setInterval> | null = null;
@@ -453,6 +499,7 @@ export function Dashboard() {
       attached = true;
       setBridgeReady(true);
       void refresh();
+      void refreshVoiceSettings(api);
 
       unsubs = [
         api.onQueueUpdated((payload) => setJobs(payload)),
@@ -502,7 +549,7 @@ export function Dashboard() {
       }
       unsubs.forEach((unsubscribe) => unsubscribe());
     };
-  }, [refresh]);
+  }, [refresh, refreshVoiceSettings]);
 
   const runningJob = useMemo(
     () => jobs.find((job) => ["extracting", "processing", "encoding"].includes(job.status)) || null,
@@ -556,6 +603,12 @@ export function Dashboard() {
   }, [activeJob, logs]);
   const activeJobDetail = activeJob ? jobDetails[activeJob.id] : undefined;
   const uiStrings = UI_STRINGS[uiLocale];
+  const selectedVoice = useMemo(
+    () => voices.find((voice) => voice.id === defaultVoiceId) || voices[0] || null,
+    [defaultVoiceId, voices]
+  );
+  const selectedVoiceName = selectedVoice ? displayVoiceName(selectedVoice) : "-";
+  const selectedVoiceSummary = uiStrings.selectedVoiceSummary.replace("{voice}", selectedVoiceName);
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -722,6 +775,25 @@ export function Dashboard() {
     }
   }
 
+  async function handleVoiceChange(nextVoiceId: string) {
+    const api = getApi();
+    if (!api) {
+      setBridgeReady(false);
+      return;
+    }
+
+    const previous = defaultVoiceId;
+    setDefaultVoiceId(nextVoiceId);
+    setSettingsBusy(true);
+    try {
+      await api.setSettings({ defaultVoiceId: nextVoiceId });
+    } catch {
+      setDefaultVoiceId(previous);
+    } finally {
+      setSettingsBusy(false);
+    }
+  }
+
   async function handleDeleteGenerated(outputId: string) {
     const api = getApi();
     if (!api) {
@@ -818,7 +890,7 @@ export function Dashboard() {
             <Button onClick={addFiles} disabled={isBusy || bootstrapBlockingVisible}>
               <Plus className="h-4 w-4" /> {uiStrings.addEpubFiles}
             </Button>
-            <Button variant="outline" disabled={bootstrapBlockingVisible} onClick={() => setIsSettingsOpen(true)}>
+            <Button className="ml-1" variant="outline" disabled={bootstrapBlockingVisible} onClick={() => setIsSettingsOpen(true)}>
               <Settings className="h-4 w-4" /> {uiStrings.settings}
             </Button>
           </div>
@@ -944,7 +1016,7 @@ export function Dashboard() {
                   )}
 
                   {activeJobDetail?.chapters && (
-                    <div className="min-h-0 flex-1 space-y-1 overflow-y-auto rounded-lg border border-border/70 bg-background/40 p-2">
+                    <div className="min-h-0 flex-1 space-y-1 overflow-y-auto rounded-lg border border-border/70 bg-background/40 px-2 pb-2 pt-3">
                       {activeJobDetail.chapters.map((chapter, index) => (
                         <div key={chapter.id} className="flex items-center justify-between rounded-md px-2 py-1 text-xs">
                           <div className="min-w-0 flex items-center gap-2">
@@ -1091,7 +1163,6 @@ export function Dashboard() {
           <Card className="w-[min(560px,92vw)] border-border/80 bg-card/95 shadow-2xl">
             <CardHeader className="pb-2">
               <CardTitle className="text-base">{uiStrings.settingsTitle}</CardTitle>
-              <CardDescription>{uiStrings.settingsDescription}</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="space-y-2">
@@ -1110,6 +1181,30 @@ export function Dashboard() {
                     <SelectItem value="en">{uiStrings.languageEnglish}</SelectItem>
                   </SelectContent>
                 </Select>
+              </div>
+              <div className="space-y-2">
+                <label htmlFor="default-voice" className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                  {uiStrings.voiceLabel}
+                </label>
+                <Select
+                  value={selectedVoice?.id || ""}
+                  onValueChange={(value) => {
+                    void handleVoiceChange(value);
+                  }}
+                  disabled={settingsBusy || voices.length === 0}
+                >
+                  <SelectTrigger id="default-voice">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {voices.map((voice) => (
+                      <SelectItem key={voice.id} value={voice.id}>
+                        {displayVoiceName(voice)}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">{selectedVoiceSummary}</p>
               </div>
               <div className="flex justify-end">
                 <Button variant="ghost" onClick={() => setIsSettingsOpen(false)}>

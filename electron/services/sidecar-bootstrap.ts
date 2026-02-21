@@ -4,7 +4,13 @@ import path from "node:path";
 import { spawn } from "node:child_process";
 import { once } from "node:events";
 import AdmZip from "adm-zip";
-import type { BootstrapStatus, RuntimeAssets, SidecarManifest, SidecarPlatformConfig } from "../types";
+import type {
+  BootstrapStatus,
+  RuntimeAssets,
+  RuntimeVoiceAsset,
+  SidecarManifest,
+  SidecarPlatformConfig
+} from "../types";
 
 function getManifestPath(): string {
   return path.join(__dirname, "..", "assets", "sidecar-manifest.json");
@@ -185,7 +191,10 @@ function deriveVoiceConfigUrl(modelUrl: string): string | null {
   return `${prefix}.onnx.json${query}`;
 }
 
-function resolvePaths(baseDir: string, pathsConfig: SidecarPlatformConfig["paths"]): Omit<RuntimeAssets, "source"> {
+function resolvePaths(
+  baseDir: string,
+  pathsConfig: SidecarPlatformConfig["paths"]
+): Omit<RuntimeAssets, "source" | "voicesById"> {
   return {
     piperExe: path.join(baseDir, pathsConfig.piperExe),
     ffmpegExe: path.join(baseDir, pathsConfig.ffmpegExe),
@@ -196,7 +205,78 @@ function resolvePaths(baseDir: string, pathsConfig: SidecarPlatformConfig["paths
   };
 }
 
-async function ensureExecutableBinaries(paths: Omit<RuntimeAssets, "source">): Promise<void> {
+function voiceIdFromModelPath(modelPath: string): string {
+  const fileName = path.basename(modelPath);
+  if (fileName.toLowerCase().endsWith(".onnx")) {
+    return fileName.slice(0, -".onnx".length);
+  }
+  return fileName || "voice-default";
+}
+
+function parseVoiceId(voiceId: string): { locale: string; speaker: string; quality: string } {
+  const match = voiceId.match(/^([a-z]{2}_[A-Z]{2})-(.+)-([a-z_]+)$/);
+  if (match) {
+    return {
+      locale: match[1] || "unknown",
+      speaker: match[2] || voiceId,
+      quality: match[3] || "unknown"
+    };
+  }
+
+  return {
+    locale: "unknown",
+    speaker: voiceId,
+    quality: "unknown"
+  };
+}
+
+function resolveVoices(
+  baseDir: string,
+  platformConfig: SidecarPlatformConfig,
+  defaults: { modelPath: string; configPath: string | null }
+): Record<string, RuntimeVoiceAsset> {
+  const voicesById: Record<string, RuntimeVoiceAsset> = {};
+
+  for (const voice of platformConfig.voices || []) {
+    const modelPath = path.join(baseDir, voice.modelPath);
+    const configPath = voice.configPath ? path.join(baseDir, voice.configPath) : null;
+    voicesById[voice.id] = {
+      id: voice.id,
+      name: voice.name,
+      locale: voice.locale,
+      speaker: voice.speaker,
+      quality: voice.quality,
+      modelPath,
+      configPath
+    };
+  }
+
+  if (Object.keys(voicesById).length > 0) {
+    return voicesById;
+  }
+
+  const fallbackId = voiceIdFromModelPath(defaults.modelPath);
+  const fallbackParts = parseVoiceId(fallbackId);
+  return {
+    [fallbackId]: {
+      id: fallbackId,
+      name: fallbackId,
+      locale: fallbackParts.locale,
+      speaker: fallbackParts.speaker,
+      quality: fallbackParts.quality,
+      modelPath: defaults.modelPath,
+      configPath: defaults.configPath
+    }
+  };
+}
+
+function allVoiceFilesExist(voicesById: Record<string, RuntimeVoiceAsset>): boolean {
+  return Object.values(voicesById).every(
+    (voice) => isFile(voice.modelPath) && (!voice.configPath || isFile(voice.configPath))
+  );
+}
+
+async function ensureExecutableBinaries(paths: Omit<RuntimeAssets, "source" | "voicesById">): Promise<void> {
   if (process.platform === "win32") {
     return;
   }
@@ -225,11 +305,24 @@ export async function ensureRuntimeAssets(options: EnsureRuntimeAssetsOptions): 
   const { appDataDir, onStatus } = options;
 
   if (process.env.PIPER_BIN && process.env.FFMPEG_BIN && process.env.PIPER_VOICE_MODEL) {
+    const envVoiceId = process.env.PIPER_VOICE_ID || voiceIdFromModelPath(process.env.PIPER_VOICE_MODEL);
+    const envVoiceParts = parseVoiceId(envVoiceId);
     return {
       piperExe: process.env.PIPER_BIN,
       ffmpegExe: process.env.FFMPEG_BIN,
       defaultVoiceModel: process.env.PIPER_VOICE_MODEL,
       defaultVoiceConfig: process.env.PIPER_VOICE_CONFIG || null,
+      voicesById: {
+        [envVoiceId]: {
+          id: envVoiceId,
+          name: envVoiceId,
+          locale: envVoiceParts.locale,
+          speaker: envVoiceParts.speaker,
+          quality: envVoiceParts.quality,
+          modelPath: process.env.PIPER_VOICE_MODEL,
+          configPath: process.env.PIPER_VOICE_CONFIG || null
+        }
+      },
       source: "env"
     };
   }
@@ -245,17 +338,22 @@ export async function ensureRuntimeAssets(options: EnsureRuntimeAssetsOptions): 
   const runtimeRoot = path.join(appDataDir, "runtime-assets", manifest.version, key);
   const markerPath = path.join(runtimeRoot, ".ready.json");
   const paths = resolvePaths(runtimeRoot, platformConfig.paths);
+  const voicesById = resolveVoices(runtimeRoot, platformConfig, {
+    modelPath: paths.defaultVoiceModel,
+    configPath: paths.defaultVoiceConfig
+  });
 
   const allPathsExist = Object.values(paths)
     .filter((targetPath): targetPath is string => Boolean(targetPath))
     .every((targetPath) => isFile(targetPath));
+  const allVoicesExist = allVoiceFilesExist(voicesById);
 
-  if (allPathsExist) {
+  if (allPathsExist && allVoicesExist) {
     await ensureExecutableBinaries(paths);
     if (!exists(markerPath)) {
       await fsp.writeFile(markerPath, JSON.stringify({ version: manifest.version, readyAt: Date.now() }, null, 2));
     }
-    return { ...paths, source: "cache" };
+    return { ...paths, voicesById, source: "cache" };
   }
 
   await fsp.mkdir(runtimeRoot, { recursive: true });
@@ -322,7 +420,14 @@ export async function ensureRuntimeAssets(options: EnsureRuntimeAssetsOptions): 
   }
 
   if (paths.defaultVoiceConfig && !exists(paths.defaultVoiceConfig) && exists(paths.defaultVoiceModel)) {
-    const voiceArchive = platformConfig.archives.find((archive) => archive.id === "voice-default");
+    const defaultModelFileName = path.basename(paths.defaultVoiceModel);
+    const voiceArchive = platformConfig.archives.find((archive) => {
+      if (archive.id === "voice-default") {
+        return true;
+      }
+      const archiveFileName = fileNameFromUrl(archive.url, "");
+      return archiveFileName === defaultModelFileName;
+    });
     const configUrl = voiceArchive ? deriveVoiceConfigUrl(voiceArchive.url) : null;
     if (configUrl) {
       await fsp.mkdir(path.dirname(paths.defaultVoiceConfig), { recursive: true });
@@ -336,10 +441,18 @@ export async function ensureRuntimeAssets(options: EnsureRuntimeAssetsOptions): 
       throw new Error(`Runtime asset missing after bootstrap: ${required}`);
     }
   }
+  for (const voice of Object.values(voicesById)) {
+    if (!isFile(voice.modelPath)) {
+      throw new Error(`Voice model missing after bootstrap: ${voice.id}`);
+    }
+    if (voice.configPath && !isFile(voice.configPath)) {
+      throw new Error(`Voice config missing after bootstrap: ${voice.id}`);
+    }
+  }
 
   await ensureExecutableBinaries(paths);
 
   await fsp.writeFile(markerPath, JSON.stringify({ version: manifest.version, readyAt: Date.now() }, null, 2));
 
-  return { ...paths, source: "download" };
+  return { ...paths, voicesById, source: "download" };
 }

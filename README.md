@@ -14,9 +14,10 @@ Electron + Next (static export) desktop app to process **EPUB -> audiobook** wit
 - Runtime sidecar bootstrap on first launch (Piper + ffmpeg + voice)
 - Platform-aware sidecars (`win32-x64`, `linux-x64`)
 
-## Voice default
+## Voice defaults
 
-Default voice target is Spanish (Spain) high quality: `es_ES-carlfm-high`.
+Startup downloads a curated `es_ES` set (highest quality per voice) and uses
+`es_ES-carlfm-high` as the default.
 
 ## Development
 

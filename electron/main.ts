@@ -264,13 +264,7 @@ function registerIpcHandlers(): void {
   ipcMain.handle(commands.SET_SETTINGS, async (_event, patch: Partial<AppSettings>) => requireQueueManager().setSettings(patch || {}));
 
   ipcMain.handle(commands.LIST_VOICES, async (): Promise<VoiceInfo[]> => {
-    return [
-      {
-        id: "es_ES-carlfm-high",
-        name: "Español (es_ES-carlfm-high)",
-        modelPath: process.env.PIPER_VOICE_MODEL || null
-      }
-    ];
+    return requireQueueManager().listVoices();
   });
 
   ipcMain.handle(commands.BOOTSTRAP_ASSETS, async () => requireQueueManager().bootstrapAssets());

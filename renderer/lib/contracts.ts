@@ -86,4 +86,7 @@ export interface VoiceInfo {
   id: string;
   name: string;
   modelPath: string | null;
+  locale?: string;
+  speaker?: string;
+  quality?: string;
 }

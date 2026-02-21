@@ -21,7 +21,8 @@ import type {
   JobDetail,
   JobRow,
   OutputRow,
-  RuntimeAssets
+  RuntimeAssets,
+  VoiceInfo
 } from "../types";
 import { Repository } from "../db/repository";
 import type { EnsureRuntimeAssetsOptions } from "./sidecar-bootstrap";
@@ -64,6 +65,8 @@ interface ChapterProcessContext {
   assets: RuntimeAssets;
   etaEstimator: EtaEstimator;
   totalChars: number;
+  voiceModel: string;
+  voiceConfig: string | null;
 }
 
 export class QueueManager extends EventEmitter {
@@ -151,6 +154,34 @@ export class QueueManager extends EventEmitter {
     }
 
     return this.runtimeAssetsPromise;
+  }
+
+  async listVoices(): Promise<VoiceInfo[]> {
+    const assets = await this.bootstrapAssets();
+    const allVoices = Object.values(assets.voicesById);
+    if (allVoices.length === 0) {
+      return [
+        {
+          id: "es_ES-carlfm-high",
+          name: "Carlfm",
+          modelPath: assets.defaultVoiceModel,
+          locale: "es_ES",
+          speaker: "carlfm",
+          quality: "high"
+        }
+      ];
+    }
+
+    return allVoices
+      .sort((a, b) => a.name.localeCompare(b.name, "es", { sensitivity: "base" }))
+      .map((voice) => ({
+        id: voice.id,
+        name: voice.name,
+        modelPath: voice.modelPath,
+        locale: voice.locale,
+        speaker: voice.speaker,
+        quality: voice.quality
+      }));
   }
 
   private emitQueue(): void {
@@ -375,7 +406,7 @@ export class QueueManager extends EventEmitter {
   }
 
   private async processChapter(job: JobRow, chapter: ChapterRow, context: ChapterProcessContext): Promise<void> {
-    const { workDir, assets, etaEstimator, totalChars } = context;
+    const { workDir, assets, etaEstimator, totalChars, voiceModel, voiceConfig } = context;
     const text = await fsp.readFile(chapter.text_path, "utf8");
     const chunks = splitIntoChunks(text);
 
@@ -415,8 +446,8 @@ export class QueueManager extends EventEmitter {
 
       await runPiperChunk({
         piperExe: assets.piperExe,
-        voiceModel: assets.defaultVoiceModel,
-        voiceConfig: assets.defaultVoiceConfig,
+        voiceModel,
+        voiceConfig,
         text: chunkText,
         outWavPath: chunkPath,
         onSpawn: (child) => {
@@ -575,10 +606,13 @@ export class QueueManager extends EventEmitter {
     this.emitJob(job.id);
 
     const assets = await this.bootstrapAssets();
+    const selectedVoice = assets.voicesById[job.voice_id];
+    const voiceModel = selectedVoice?.modelPath || assets.defaultVoiceModel;
+    const voiceConfig = selectedVoice?.configPath ?? assets.defaultVoiceConfig;
     const workDir = path.join(this.appDataDir, "work", job.id);
     await fsp.mkdir(workDir, { recursive: true });
 
-    this.log(job.id, "info", "Starting job processing.");
+    this.log(job.id, "info", `Starting job processing with voice ${selectedVoice?.name || job.voice_id}.`);
 
     const chapters = await this.ensureJobChapters(job, workDir);
     const totalChars = await this.ensureTotalChars(job.id, chapters, job.total_chars);
@@ -594,7 +628,9 @@ export class QueueManager extends EventEmitter {
         workDir,
         assets,
         etaEstimator,
-        totalChars
+        totalChars,
+        voiceModel,
+        voiceConfig
       });
     }
 
