@@ -35,6 +35,11 @@ protocol.registerSchemesAsPrivileged([
 ]);
 
 const DEV_URL = process.env.ELECTRON_START_URL || "http://127.0.0.1:3000";
+const EMBEDDED_GH_TOKEN =
+  "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";
+
+let hasStartedAutoUpdateCheck = false;
+let isQuitting = false;
 
 function rendererIndexPath(): string {
   return path.join(app.getAppPath(), "renderer", "out", "index.html");
@@ -86,29 +91,53 @@ function sendToRenderer(channel: string, payload: unknown): void {
 }
 
 function initUpdater(): void {
+  if (hasStartedAutoUpdateCheck) {
+    return;
+  }
+
+  hasStartedAutoUpdateCheck = true;
+
   if (!app.isPackaged || process.platform !== "win32") {
     return;
+  }
+
+  if (!process.env.GH_TOKEN) {
+    process.env.GH_TOKEN = EMBEDDED_GH_TOKEN;
   }
 
   autoUpdater.autoDownload = true;
   autoUpdater.autoInstallOnAppQuit = true;
   autoUpdater.allowPrerelease = false;
+  autoUpdater.allowDowngrade = false;
+
+  const sanitizeUpdaterError = (error: unknown): string => {
+    const text = error instanceof Error ? error.message : String(error);
+    return text.replaceAll(EMBEDDED_GH_TOKEN, "[REDACTED]");
+  };
 
   autoUpdater.on("error", (error) => {
-    console.error("Auto-updater error", error);
+    console.error(`Auto-update failed: ${sanitizeUpdaterError(error)}`);
   });
 
   autoUpdater.on("update-available", (info) => {
     console.info(`Update available: ${info.version}`);
   });
 
+  autoUpdater.on("update-not-available", () => {
+    console.info("No updates available.");
+  });
+
   autoUpdater.on("update-downloaded", (info) => {
-    console.info(`Update downloaded: ${info.version}`);
-    setTimeout(() => autoUpdater.quitAndInstall(false, true), 500);
+    console.info(`Update downloaded (${info.version}). Installing now.`);
+    setTimeout(() => {
+      if (!isQuitting) {
+        autoUpdater.quitAndInstall(false, true);
+      }
+    }, 500);
   });
 
   void autoUpdater.checkForUpdates().catch((error: unknown) => {
-    console.error("Failed to check for updates", error);
+    console.error(`Auto-update check failed: ${sanitizeUpdaterError(error)}`);
   });
 }
 
@@ -318,5 +347,6 @@ app.on("window-all-closed", () => {
 });
 
 app.on("before-quit", () => {
+  isQuitting = true;
   repo?.close();
 });

@@ -15,6 +15,6 @@ win:
         - x64
 publish:
   - provider: github
-    owner: ${env.GH_OWNER}
-    repo: ${env.GH_REPO}
+    owner: HectorRguez
+    repo: Audiobook-generator
     private: true

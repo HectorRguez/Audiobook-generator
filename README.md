@@ -52,3 +52,4 @@ npm run verify:sidecars
 - Auto-update is wired via `electron-updater` for packaged Windows builds.
 - Release workflow is in `.github/workflows/build-win.yml`.
 - Runtime assets are downloaded to user data under `runtime-assets/`.
+- The updater uses an embedded GitHub token for private release access.
