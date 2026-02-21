@@ -2,6 +2,24 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  DndContext,
+  PointerSensor,
+  closestCenter,
+  type DragEndEvent,
+  type DragOverEvent,
+  type DragStartEvent,
+  useSensor,
+  useSensors
+} from "@dnd-kit/core";
+import { restrictToVerticalAxis } from "@dnd-kit/modifiers";
+import {
+  SortableContext,
+  arrayMove,
+  useSortable,
+  verticalListSortingStrategy
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
+import {
   Clock3,
   Download,
   FileAudio2,
@@ -92,20 +110,77 @@ function formatBootstrapPhase(phase: BootstrapStatus["phase"]) {
   return "Error";
 }
 
-function reorder(list: QueueJob[], fromId: string, toId: string) {
-  const fromIndex = list.findIndex((item) => item.id === fromId);
-  const toIndex = list.findIndex((item) => item.id === toId);
-  if (fromIndex < 0 || toIndex < 0 || fromIndex === toIndex) {
-    return list;
-  }
+interface SortableQueueRowProps {
+  job: QueueJob;
+  bootstrapBlockingVisible: boolean;
+  onDelete: (jobId: string) => void;
+}
 
-  const next = [...list];
-  const [moved] = next.splice(fromIndex, 1);
-  if (!moved) {
-    return list;
-  }
-  next.splice(toIndex, 0, moved);
-  return next;
+function SortableQueueRow({ job, bootstrapBlockingVisible, onDelete }: SortableQueueRowProps) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
+    id: job.id
+  });
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={{
+        transform: CSS.Transform.toString(transform),
+        transition
+      }}
+      className={`rounded-lg border border-border/70 bg-background/50 p-3 transition-shadow ${
+        isDragging ? "z-20 border-primary/60 shadow-lg" : ""
+      }`}
+    >
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0">
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              className="touch-none cursor-grab rounded p-0.5 text-muted-foreground transition hover:text-foreground active:cursor-grabbing"
+              aria-label={`Reorder ${job.title}`}
+              {...attributes}
+              {...listeners}
+            >
+              <GripVertical className="h-4 w-4 shrink-0" />
+            </button>
+            <p className="truncate text-sm font-medium">{job.title}</p>
+          </div>
+          <p className="truncate text-xs text-muted-foreground">{job.source_name}</p>
+        </div>
+        <Button
+          size="sm"
+          variant="ghost"
+          disabled={bootstrapBlockingVisible}
+          onClick={() => onDelete(job.id)}
+        >
+          <Trash2 className="h-3.5 w-3.5" />
+        </Button>
+      </div>
+      {job.error_message && (
+        <p className="mt-2 rounded-md border border-destructive/40 bg-destructive/10 px-2 py-1 text-xs text-destructive">
+          {job.error_message}
+        </p>
+      )}
+    </div>
+  );
+}
+
+function DisabledQueueRow({ job }: { job: QueueJob }) {
+  return (
+    <div className="pointer-events-none rounded-lg border border-border/60 bg-muted/60 p-3 opacity-65 saturate-0">
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0">
+          <div className="flex items-center gap-2">
+            <GripVertical className="h-4 w-4 shrink-0 text-muted-foreground/70" />
+            <p className="truncate text-sm font-medium text-muted-foreground">{job.title}</p>
+          </div>
+          <p className="truncate text-xs text-muted-foreground">{job.source_name}</p>
+        </div>
+        <Badge variant={statusVariant(job.status)}>{job.status}</Badge>
+      </div>
+    </div>
+  );
 }
 
 export function Dashboard() {
@@ -115,15 +190,15 @@ export function Dashboard() {
   const [playbackUrls, setPlaybackUrls] = useState<Record<string, string>>({});
   const [bootstrapStatus, setBootstrapStatus] = useState<BootstrapStatus | null>(null);
   const [logs, setLogs] = useState<LogEvent[]>([]);
-  const [draggingId, setDraggingId] = useState<string | null>(null);
-  const [dragOverId, setDragOverId] = useState<string | null>(null);
-  const [queueOrder, setQueueOrder] = useState<QueueJob[]>([]);
+  const [activeQueueDragId, setActiveQueueDragId] = useState<string | null>(null);
+  const [queueOrderIds, setQueueOrderIds] = useState<string[]>([]);
   const [isBusy, setIsBusy] = useState(false);
   const [bridgeReady, setBridgeReady] = useState(true);
   const [showQueueBottomFade, setShowQueueBottomFade] = useState(false);
   const [showGeneratedBottomFade, setShowGeneratedBottomFade] = useState(false);
   const [generatedDeleteTarget, setGeneratedDeleteTarget] = useState<GeneratedAudio | null>(null);
   const [deletingGeneratedId, setDeletingGeneratedId] = useState<string | null>(null);
+  const queueOrderIdsRef = useRef<string[]>([]);
   const queueContentRef = useRef<HTMLDivElement | null>(null);
   const generatedContentRef = useRef<HTMLDivElement | null>(null);
 
@@ -230,7 +305,25 @@ export function Dashboard() {
       ),
     [activeJob?.id, jobs]
   );
-  const visibleQueueJobs = draggingId ? queueOrder : queueJobs;
+  const processingQueueJob = runningJob;
+  const queueJobIds = useMemo(() => queueJobs.map((job) => job.id), [queueJobs]);
+  const queueJobsById = useMemo(
+    () => new Map(queueJobs.map((job) => [job.id, job] as const)),
+    [queueJobs]
+  );
+  const visibleQueueJobs = useMemo(() => {
+    const ids = queueOrderIds.length > 0 ? queueOrderIds : queueJobIds;
+    return ids
+      .map((jobId) => queueJobsById.get(jobId))
+      .filter((job): job is QueueJob => Boolean(job));
+  }, [queueJobIds, queueJobsById, queueOrderIds]);
+  const queueDragSensors = useSensors(
+    useSensor(PointerSensor, {
+      activationConstraint: {
+        distance: 6
+      }
+    })
+  );
 
   const activeLog = useMemo(() => {
     if (!activeJob) {
@@ -241,11 +334,15 @@ export function Dashboard() {
   const activeJobDetail = activeJob ? jobDetails[activeJob.id] : undefined;
 
   useEffect(() => {
-    if (draggingId) {
+    if (activeQueueDragId) {
       return;
     }
-    setQueueOrder(queueJobs);
-  }, [draggingId, queueJobs]);
+    setQueueOrderIds(queueJobIds);
+  }, [activeQueueDragId, queueJobIds]);
+
+  useEffect(() => {
+    queueOrderIdsRef.current = queueOrderIds;
+  }, [queueOrderIds]);
 
   const bootstrapBlockingVisible = Boolean(
     bootstrapStatus && (bootstrapStatus.phase === "downloading" || bootstrapStatus.phase === "extracting")
@@ -396,47 +493,70 @@ export function Dashboard() {
     }
   }
 
-  function handleQueueDragStart(jobId: string) {
-    setDraggingId(jobId);
-    setDragOverId(jobId);
-    setQueueOrder(queueJobs);
-  }
-
-  function handleQueueDragEnter(targetId: string) {
-    if (!draggingId || draggingId === targetId) {
+  function handleQueueDragStart(event: DragStartEvent) {
+    const dragId = String(event.active.id);
+    if (!queueJobsById.has(dragId)) {
       return;
     }
-    setDragOverId(targetId);
-    setQueueOrder((current) => reorder(current.length > 0 ? current : queueJobs, draggingId, targetId));
+    setActiveQueueDragId(dragId);
+    setQueueOrderIds((current) => (current.length > 0 ? current : queueJobIds));
   }
 
-  function resetQueueDragState() {
-    setDraggingId(null);
-    setDragOverId(null);
-    setQueueOrder(queueJobs);
+  function handleQueueDragOver(event: DragOverEvent) {
+    if (!event.over) {
+      return;
+    }
+    const activeId = String(event.active.id);
+    const overId = String(event.over.id);
+    if (activeId === overId) {
+      return;
+    }
+
+    setQueueOrderIds((current) => {
+      const base = current.length > 0 ? current : queueJobIds;
+      const from = base.indexOf(activeId);
+      const to = base.indexOf(overId);
+      if (from < 0 || to < 0 || from === to) {
+        return base;
+      }
+      return arrayMove(base, from, to);
+    });
   }
 
-  async function commitQueueOrder() {
+  function handleQueueDragCancel() {
+    setActiveQueueDragId(null);
+    setQueueOrderIds(queueJobIds);
+  }
+
+  async function handleQueueDragEnd(event: DragEndEvent) {
+    setActiveQueueDragId(null);
+
     const api = getApi();
     if (!api) {
       setBridgeReady(false);
-      resetQueueDragState();
+      setQueueOrderIds(queueJobIds);
       return;
     }
 
-    const nextOrder = queueOrder.length > 0 ? queueOrder : queueJobs;
-    if (nextOrder.length > 1) {
-      await api.reorderQueue(nextOrder.map((job) => job.id));
+    if (!event.over) {
+      setQueueOrderIds(queueJobIds);
+      return;
     }
-    resetQueueDragState();
+
+    const nextOrder = queueOrderIdsRef.current.length > 0 ? queueOrderIdsRef.current : queueJobIds;
+    const reorderIds = nextOrder.filter((jobId) => queueJobsById.has(jobId));
+    if (reorderIds.length > 1) {
+      await api.reorderQueue(reorderIds);
+    }
+    setQueueOrderIds(reorderIds);
   }
 
   return (
     <main className="h-screen w-full p-4 lg:p-6">
       <div className="mx-auto flex h-full max-w-[1800px] flex-col gap-4">
-        <header className="flex flex-col gap-3">
-          <h1 className="text-center text-2xl font-semibold">Audiobook Generator</h1>
-          <div className="flex flex-wrap items-center justify-end gap-2">
+        <header className="flex items-start gap-3">
+          <h1 className="text-left text-2xl font-semibold">Audiobook Generator</h1>
+          <div className="ml-auto flex flex-wrap items-center justify-end gap-2">
             {!bridgeReady && <Badge variant="destructive">Desktop bridge unavailable</Badge>}
             {bootstrapStatus?.phase === "error" && !bootstrapBlockingVisible && (
               <Badge variant="destructive">
@@ -465,61 +585,43 @@ export function Dashboard() {
               <CardDescription>Drag rows to reorder. Drop EPUB files here to enqueue.</CardDescription>
             </CardHeader>
             <CardContent ref={queueContentRef} className="relative min-h-0 flex-1 space-y-2 overflow-y-auto pb-4">
-              {visibleQueueJobs.length === 0 ? (
+              {!processingQueueJob && visibleQueueJobs.length === 0 ? (
                 <p className="rounded-lg border border-dashed border-border/70 bg-background/30 p-4 text-sm text-muted-foreground">
                   Queue is empty. Add one or more EPUB files.
                 </p>
               ) : (
-                visibleQueueJobs.map((job) => (
-                  <div
-                    key={job.id}
-                    draggable
-                    onDragStart={() => handleQueueDragStart(job.id)}
-                    onDragEnter={() => handleQueueDragEnter(job.id)}
-                    onDragOver={(event) => event.preventDefault()}
-                    onDrop={(event) => {
-                      event.preventDefault();
-                      event.stopPropagation();
-                      void commitQueueOrder();
-                    }}
-                    onDragEnd={() => {
-                      if (!draggingId) {
-                        return;
-                      }
-                      resetQueueDragState();
-                    }}
-                    className={`rounded-lg border border-border/70 bg-background/50 p-3 transition-all duration-150 ${
-                      dragOverId === job.id ? "scale-[1.01] border-primary/50 shadow-sm" : ""
-                    }`}
-                  >
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="min-w-0">
-                        <div className="flex items-center gap-2">
-                          <GripVertical className="h-4 w-4 shrink-0 text-muted-foreground" />
-                          <p className="truncate text-sm font-medium">{job.title}</p>
-                        </div>
-                        <p className="truncate text-xs text-muted-foreground">{job.source_name}</p>
-                      </div>
-                      <Badge variant={statusVariant(job.status)}>{job.status}</Badge>
-                    </div>
-
-                    <div className="mt-2 flex flex-wrap gap-2">
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        disabled={bootstrapBlockingVisible}
-                        onClick={() => void getApi()?.deleteJob(job.id, false)}
+                <>
+                  {processingQueueJob && <DisabledQueueRow job={processingQueueJob} />}
+                  {visibleQueueJobs.length > 0 && (
+                    <DndContext
+                      sensors={queueDragSensors}
+                      collisionDetection={closestCenter}
+                      modifiers={[restrictToVerticalAxis]}
+                      onDragStart={handleQueueDragStart}
+                      onDragOver={handleQueueDragOver}
+                      onDragCancel={handleQueueDragCancel}
+                      onDragEnd={(event) => {
+                        void handleQueueDragEnd(event);
+                      }}
+                    >
+                      <SortableContext
+                        items={visibleQueueJobs.map((job) => job.id)}
+                        strategy={verticalListSortingStrategy}
                       >
-                        <Trash2 className="mr-1 h-3.5 w-3.5" /> Delete
-                      </Button>
-                    </div>
-                    {job.error_message && (
-                      <p className="mt-2 rounded-md border border-destructive/40 bg-destructive/10 px-2 py-1 text-xs text-destructive">
-                        {job.error_message}
-                      </p>
-                    )}
-                  </div>
-                ))
+                        <div className="space-y-2">
+                          {visibleQueueJobs.map((job) => (
+                            <SortableQueueRow
+                              key={job.id}
+                              job={job}
+                              bootstrapBlockingVisible={bootstrapBlockingVisible}
+                              onDelete={(jobId) => void getApi()?.deleteJob(jobId, false)}
+                            />
+                          ))}
+                        </div>
+                      </SortableContext>
+                    </DndContext>
+                  )}
+                </>
               )}
               <div
                 className={`pointer-events-none absolute bottom-0 left-0 right-0 h-10 bg-gradient-to-t from-background/30 via-background/10 to-transparent transition-opacity duration-200 ${
@@ -616,7 +718,7 @@ export function Dashboard() {
                       <div className="flex items-center gap-1">
                         <Button
                           size="sm"
-                          variant="secondary"
+                          variant="ghost"
                           disabled={bootstrapBlockingVisible}
                           onClick={() => void getApi()?.downloadGeneratedAudio(output.id)}
                         >

@@ -377,9 +377,15 @@ export class Repository {
   }
 
   reorderQueue(jobIdsInOrder: string[]): void {
+    const allowedStatuses = new Set<JobStatus>(["queued", "paused", "error"]);
+    const reorderableJobIds = jobIdsInOrder.filter((jobId) => {
+      const job = this.getJob(jobId);
+      return Boolean(job && allowedStatuses.has(job.status));
+    });
+
     const ts = nowTs();
     const tx = this.db.transaction(() => {
-      jobIdsInOrder.forEach((jobId, idx) => {
+      reorderableJobIds.forEach((jobId, idx) => {
         asStatement(this.db.prepare("UPDATE jobs SET queue_position = ?, updated_at = ? WHERE id = ?")).run(
           idx + 1,
           ts,
