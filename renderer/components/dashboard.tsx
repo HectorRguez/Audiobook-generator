@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   DndContext,
+  DragOverlay,
   PointerSensor,
   closestCenter,
   type DragEndEvent,
@@ -128,8 +129,8 @@ function SortableQueueRow({ job, bootstrapBlockingVisible, onDelete }: SortableQ
         transform: CSS.Transform.toString(transform),
         transition
       }}
-      className={`rounded-lg border border-border/70 bg-background/50 p-3 transition-shadow ${
-        isDragging ? "z-20 border-primary/60 shadow-lg" : ""
+      className={`relative rounded-lg border border-border/70 bg-background/50 p-3 transition-shadow ${
+        isDragging ? "invisible" : ""
       }`}
     >
       <div className="flex items-start justify-between gap-2">
@@ -166,9 +167,33 @@ function SortableQueueRow({ job, bootstrapBlockingVisible, onDelete }: SortableQ
   );
 }
 
+function QueueRowDragOverlay({ job }: { job: QueueJob }) {
+  return (
+    <div className="w-full rounded-lg border border-primary/60 bg-background/95 p-3 shadow-2xl ring-1 ring-primary/20">
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0">
+          <div className="flex items-center gap-2">
+            <GripVertical className="h-4 w-4 shrink-0 text-muted-foreground" />
+            <p className="truncate text-sm font-medium">{job.title}</p>
+          </div>
+          <p className="truncate text-xs text-muted-foreground">{job.source_name}</p>
+        </div>
+      </div>
+      {job.error_message && (
+        <p className="mt-2 rounded-md border border-destructive/40 bg-destructive/10 px-2 py-1 text-xs text-destructive">
+          {job.error_message}
+        </p>
+      )}
+    </div>
+  );
+}
+
 function DisabledQueueRow({ job }: { job: QueueJob }) {
   return (
-    <div className="pointer-events-none rounded-lg border border-border/60 bg-muted/60 p-3 opacity-65 saturate-0">
+    <div
+      aria-disabled="true"
+      className="pointer-events-none select-none rounded-lg border border-border/60 bg-muted/60 p-3 opacity-65 saturate-0 transition-none"
+    >
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
           <div className="flex items-center gap-2">
@@ -323,6 +348,10 @@ export function Dashboard() {
         distance: 6
       }
     })
+  );
+  const draggedQueueJob = useMemo(
+    () => (activeQueueDragId ? queueJobsById.get(activeQueueDragId) ?? null : null),
+    [activeQueueDragId, queueJobsById]
   );
 
   const activeLog = useMemo(() => {
@@ -591,7 +620,11 @@ export function Dashboard() {
                 </p>
               ) : (
                 <>
-                  {processingQueueJob && <DisabledQueueRow job={processingQueueJob} />}
+                  {processingQueueJob && (
+                    <div className="relative z-10">
+                      <DisabledQueueRow job={processingQueueJob} />
+                    </div>
+                  )}
                   {visibleQueueJobs.length > 0 && (
                     <DndContext
                       sensors={queueDragSensors}
@@ -619,6 +652,9 @@ export function Dashboard() {
                           ))}
                         </div>
                       </SortableContext>
+                      <DragOverlay zIndex={2000}>
+                        {draggedQueueJob ? <QueueRowDragOverlay job={draggedQueueJob} /> : null}
+                      </DragOverlay>
                     </DndContext>
                   )}
                 </>
