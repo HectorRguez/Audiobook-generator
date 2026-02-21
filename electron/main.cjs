@@ -229,6 +229,13 @@ app.whenReady().then(async () => {
       createWindow();
     }
   });
+}).catch((error) => {
+  console.error("Failed to bootstrap Electron app:", error);
+  app.quit();
+});
+
+process.on("unhandledRejection", (error) => {
+  console.error("Unhandled rejection in main process:", error);
 });
 
 app.on("window-all-closed", () => {

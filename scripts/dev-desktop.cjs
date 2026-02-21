@@ -27,7 +27,26 @@ async function findFreePort(start = 3000, attempts = 200) {
     }
   }
 
-  throw new Error(`No free port found in range ${start}-${start + attempts - 1}`);
+  return new Promise((resolve, reject) => {
+    const server = net.createServer();
+
+    server.once("error", (error) => {
+      reject(new Error(`No free port found in range ${start}-${start + attempts - 1}: ${error.message}`));
+    });
+
+    server.once("listening", () => {
+      const address = server.address();
+      if (!address || typeof address === "string") {
+        server.close(() => reject(new Error("Failed to acquire ephemeral port.")));
+        return;
+      }
+
+      const { port } = address;
+      server.close(() => resolve(port));
+    });
+
+    server.listen(0, "127.0.0.1");
+  });
 }
 
 async function waitForTcp(port, timeoutMs = 30000) {
@@ -77,7 +96,9 @@ async function main() {
 
   console.log(`[dev-desktop] Using renderer port ${port}`);
 
-  const renderer = spawnChild(process.execPath, [NEXT_BIN, "dev", "./renderer", "-p", String(port)]);
+  const renderer = spawnChild(process.execPath, [NEXT_BIN, "dev", "-H", "127.0.0.1", "-p", String(port)], {
+    cwd: "./renderer"
+  });
   let electron = null;
   let shuttingDown = false;
 

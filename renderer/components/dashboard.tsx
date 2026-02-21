@@ -89,11 +89,22 @@ export function Dashboard() {
   const [logs, setLogs] = useState<LogEvent[]>([]);
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const [isBusy, setIsBusy] = useState(false);
+  const [bridgeReady, setBridgeReady] = useState(true);
+
+  function getApi() {
+    return (window as { audiobook?: Window["audiobook"] }).audiobook;
+  }
 
   const refresh = useCallback(async () => {
+    const api = getApi();
+    if (!api) {
+      setBridgeReady(false);
+      return;
+    }
+
     const [nextJobs, nextGenerated] = await Promise.all([
-      window.audiobook.listJobs(),
-      window.audiobook.listGeneratedAudios()
+      api.listJobs(),
+      api.listGeneratedAudios()
     ]);
 
     setJobs(nextJobs);
@@ -101,21 +112,31 @@ export function Dashboard() {
   }, []);
 
   useEffect(() => {
+    const api = getApi();
+    if (!api) {
+      setBridgeReady(false);
+      setBootstrapStatus({
+        phase: "error",
+        message: "Electron bridge not available. Start with `npm run dev`."
+      });
+      return;
+    }
+
     void refresh();
 
     const unsubs = [
-      window.audiobook.onQueueUpdated((payload) => setJobs(payload)),
-      window.audiobook.onGeneratedUpdated((payload) => setGenerated(payload)),
-      window.audiobook.onJobUpdated((payload) => {
+      api.onQueueUpdated((payload) => setJobs(payload)),
+      api.onGeneratedUpdated((payload) => setGenerated(payload)),
+      api.onJobUpdated((payload) => {
         setJobDetails((current) => ({ ...current, [payload.id]: payload }));
       }),
-      window.audiobook.onBootstrapStatus((payload) => setBootstrapStatus(payload)),
-      window.audiobook.onLogEvent((payload) => {
+      api.onBootstrapStatus((payload) => setBootstrapStatus(payload)),
+      api.onLogEvent((payload) => {
         setLogs((current) => [...current.slice(-200), payload]);
       })
     ];
 
-    void window.audiobook.bootstrapAssets().catch((error: unknown) => {
+    void api.bootstrapAssets().catch((error: unknown) => {
       setBootstrapStatus({
         phase: "error",
         message: error instanceof Error ? error.message : "Failed to bootstrap runtime assets"
@@ -148,11 +169,17 @@ export function Dashboard() {
   }, [activeJob, logs]);
 
   async function addFiles() {
+    const api = getApi();
+    if (!api) {
+      setBridgeReady(false);
+      return;
+    }
+
     setIsBusy(true);
     try {
-      const filePaths = await window.audiobook.pickEpubFiles();
+      const filePaths = await api.pickEpubFiles();
       if (filePaths.length > 0) {
-        await window.audiobook.enqueueEpubFiles(filePaths);
+        await api.enqueueEpubFiles(filePaths);
       }
     } finally {
       setIsBusy(false);
@@ -160,9 +187,15 @@ export function Dashboard() {
   }
 
   async function handleDrop(files: FileList) {
+    const api = getApi();
+    if (!api) {
+      setBridgeReady(false);
+      return;
+    }
+
     const paths = Array.from(files)
       .map((file) => (file as File & { path?: string }).path)
-      .filter((value): value is string => Boolean(value) && value.toLowerCase().endsWith(".epub"));
+      .filter((value): value is string => typeof value === "string" && value.toLowerCase().endsWith(".epub"));
 
     if (paths.length === 0) {
       return;
@@ -170,13 +203,19 @@ export function Dashboard() {
 
     setIsBusy(true);
     try {
-      await window.audiobook.enqueueEpubFiles(paths);
+      await api.enqueueEpubFiles(paths);
     } finally {
       setIsBusy(false);
     }
   }
 
   async function reorderQueue(targetId: string) {
+    const api = getApi();
+    if (!api) {
+      setBridgeReady(false);
+      return;
+    }
+
     if (!draggingId || draggingId === targetId) {
       return;
     }
@@ -188,7 +227,7 @@ export function Dashboard() {
     });
     setDraggingId(null);
 
-    await window.audiobook.reorderQueue(next.map((job) => job.id));
+    await api.reorderQueue(next.map((job) => job.id));
   }
 
   return (
@@ -200,6 +239,7 @@ export function Dashboard() {
             <p className="text-sm text-muted-foreground">EPUB queue with durable state and chapter-level checkpoints.</p>
           </div>
           <div className="flex items-center gap-2">
+            {!bridgeReady && <Badge variant="destructive">Desktop bridge unavailable</Badge>}
             {bootstrapStatus && (
               <Badge variant={bootstrapStatus.phase === "error" ? "destructive" : "secondary"}>
                 {bootstrapStatus.phase}: {bootstrapStatus.message}
@@ -252,24 +292,24 @@ export function Dashboard() {
 
                     <div className="mt-2 flex flex-wrap gap-2">
                       {job.status === "queued" || job.status === "processing" || job.status === "extracting" || job.status === "encoding" ? (
-                        <Button size="sm" variant="secondary" onClick={() => void window.audiobook.pauseJob(job.id)}>
+                        <Button size="sm" variant="secondary" onClick={() => void getApi()?.pauseJob(job.id)}>
                           <Pause className="mr-1 h-3.5 w-3.5" /> Pause
                         </Button>
                       ) : null}
 
                       {(job.status === "paused" || job.status === "error") && (
-                        <Button size="sm" variant="secondary" onClick={() => void window.audiobook.resumeJob(job.id)}>
+                        <Button size="sm" variant="secondary" onClick={() => void getApi()?.resumeJob(job.id)}>
                           <Play className="mr-1 h-3.5 w-3.5" /> Resume
                         </Button>
                       )}
 
                       {!["done", "canceled"].includes(job.status) && (
-                        <Button size="sm" variant="destructive" onClick={() => void window.audiobook.cancelJob(job.id)}>
+                        <Button size="sm" variant="destructive" onClick={() => void getApi()?.cancelJob(job.id)}>
                           <XCircle className="mr-1 h-3.5 w-3.5" /> Cancel
                         </Button>
                       )}
 
-                      <Button size="sm" variant="ghost" onClick={() => void window.audiobook.deleteJob(job.id, false)}>
+                      <Button size="sm" variant="ghost" onClick={() => void getApi()?.deleteJob(job.id, false)}>
                         <Trash2 className="mr-1 h-3.5 w-3.5" /> Delete
                       </Button>
                     </div>
@@ -350,10 +390,10 @@ export function Dashboard() {
                       </p>
                     </div>
                     <div className="flex shrink-0 gap-1">
-                      <Button size="sm" variant="secondary" onClick={() => void window.audiobook.downloadGeneratedAudio(output.id)}>
+                      <Button size="sm" variant="secondary" onClick={() => void getApi()?.downloadGeneratedAudio(output.id)}>
                         <Download className="h-3.5 w-3.5" />
                       </Button>
-                      <Button size="sm" variant="ghost" onClick={() => void window.audiobook.openOutputFolder(output.job_id)}>
+                      <Button size="sm" variant="ghost" onClick={() => void getApi()?.openOutputFolder(output.job_id)}>
                         <FolderOpen className="h-3.5 w-3.5" />
                       </Button>
                     </div>
