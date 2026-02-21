@@ -2,10 +2,12 @@ import { ema } from "moving-averages";
 
 export class EtaEstimator {
   private readonly maxSamples: number;
+  private readonly smoothingWindow: number;
   private readonly samples: number[];
 
-  constructor(maxSamples = 30) {
+  constructor(maxSamples = 30, smoothingWindow = 8) {
     this.maxSamples = maxSamples;
+    this.smoothingWindow = smoothingWindow;
     this.samples = [];
   }
 
@@ -39,8 +41,10 @@ export class EtaEstimator {
       return null;
     }
 
-    const emaSeries = ema(this.samples, 0.35) as number[];
-    const currentRate = emaSeries[emaSeries.length - 1];
+    // moving-averages `ema` expects a period/window integer, not an alpha fraction.
+    const period = Math.max(1, Math.min(this.smoothingWindow, this.samples.length));
+    const emaSeries = ema(this.samples, period) as number[];
+    const currentRate = [...emaSeries].reverse().find((value) => Number.isFinite(value) && value > 0);
     if (typeof currentRate !== "number") {
       return null;
     }
