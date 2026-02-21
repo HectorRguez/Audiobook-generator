@@ -676,9 +676,11 @@ export function Dashboard() {
                   <div className="flex flex-col items-center gap-3 text-center">
                     <div className="relative overflow-visible rounded-2xl border border-border/70 bg-background/80 p-6">
                       <FileAudio2 className="h-14 w-14 text-primary" />
-                      <Badge variant={statusVariant(activeJob.status)} className="absolute right-2 top-2">
-                        {activeJob.status}
-                      </Badge>
+                      {activeJob.status !== "processing" && (
+                        <Badge variant={statusVariant(activeJob.status)} className="absolute right-2 top-2">
+                          {activeJob.status}
+                        </Badge>
+                      )}
                     </div>
                     <p className="line-clamp-2 text-sm font-semibold">{activeJob.title}</p>
                     <p className="line-clamp-1 text-xs text-muted-foreground">{activeJob.source_name}</p>

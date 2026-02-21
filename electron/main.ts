@@ -56,7 +56,8 @@ async function loadRenderer(window: BrowserWindow): Promise<void> {
 }
 
 function createWindow(): void {
-  mainWindow = new BrowserWindow({
+  const appIconPath = path.join(app.getAppPath(), "renderer", "public", "app-icon.png");
+  const windowOptions = {
     width: 1680,
     height: 980,
     minWidth: 1280,
@@ -68,7 +69,13 @@ function createWindow(): void {
       nodeIntegration: false,
       sandbox: false
     }
-  });
+  };
+
+  if (process.platform !== "darwin") {
+    Object.assign(windowOptions, { icon: appIconPath });
+  }
+
+  mainWindow = new BrowserWindow(windowOptions);
 
   mainWindow.webContents.on("preload-error", (_event, preloadPath, error) => {
     console.error(`Preload error at ${preloadPath}:`, error);
