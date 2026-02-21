@@ -816,10 +816,10 @@ export function Dashboard() {
               </Badge>
             )}
             <Button onClick={addFiles} disabled={isBusy || bootstrapBlockingVisible}>
-              <Plus className="mr-2 h-4 w-4" /> {uiStrings.addEpubFiles}
+              <Plus className="h-4 w-4" /> {uiStrings.addEpubFiles}
             </Button>
             <Button variant="outline" disabled={bootstrapBlockingVisible} onClick={() => setIsSettingsOpen(true)}>
-              <Settings className="mr-2 h-4 w-4" /> {uiStrings.settings}
+              <Settings className="h-4 w-4" /> {uiStrings.settings}
             </Button>
           </div>
         </header>
