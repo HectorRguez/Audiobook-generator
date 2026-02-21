@@ -1,0 +1,61 @@
+{
+  "version": "2026.02.21.1",
+  "platforms": {
+    "win32-x64": {
+      "archives": [
+        {
+          "id": "piper",
+          "url": "https://downloads.sourceforge.net/project/piper-tts.mirror/piper_windows_amd64.zip",
+          "archiveType": "zip",
+          "extractTo": "piper"
+        },
+        {
+          "id": "ffmpeg",
+          "url": "https://example.com/ffmpeg-windows-x64.zip",
+          "archiveType": "zip",
+          "extractTo": "ffmpeg"
+        },
+        {
+          "id": "voice-default",
+          "url": "https://example.com/piper-voice-es_ES-davefx-medium.zip",
+          "archiveType": "zip",
+          "extractTo": "voice-default"
+        }
+      ],
+      "paths": {
+        "piperExe": "piper/piper.exe",
+        "ffmpegExe": "ffmpeg/ffmpeg.exe",
+        "defaultVoiceModel": "voice-default/es_ES-davefx-medium.onnx",
+        "defaultVoiceConfig": "voice-default/es_ES-davefx-medium.onnx.json"
+      }
+    },
+    "linux-x64": {
+      "archives": [
+        {
+          "id": "piper",
+          "url": "https://downloads.sourceforge.net/project/piper-tts.mirror/piper_linux_x86_64.tar.gz",
+          "archiveType": "tar.gz",
+          "extractTo": "piper"
+        },
+        {
+          "id": "ffmpeg",
+          "url": "https://example.com/ffmpeg-linux-x64.tar.xz",
+          "archiveType": "tar.xz",
+          "extractTo": "ffmpeg"
+        },
+        {
+          "id": "voice-default",
+          "url": "https://example.com/piper-voice-es_ES-davefx-medium.zip",
+          "archiveType": "zip",
+          "extractTo": "voice-default"
+        }
+      ],
+      "paths": {
+        "piperExe": "piper/piper",
+        "ffmpegExe": "ffmpeg/ffmpeg",
+        "defaultVoiceModel": "voice-default/es_ES-davefx-medium.onnx",
+        "defaultVoiceConfig": "voice-default/es_ES-davefx-medium.onnx.json"
+      }
+    }
+  }
+}

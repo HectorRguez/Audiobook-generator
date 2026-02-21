@@ -1,0 +1,20 @@
+appId: com.hector.audiobookgenerator
+productName: Audiobook Generator
+asar: false
+directories:
+  output: dist
+files:
+  - electron/**/*
+  - renderer/out/**/*
+  - renderer/public/**/*
+  - package.json
+win:
+  target:
+    - target: nsis
+      arch:
+        - x64
+publish:
+  - provider: github
+    owner: ${env.GH_OWNER}
+    repo: ${env.GH_REPO}
+    private: true
