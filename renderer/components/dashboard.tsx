@@ -1,7 +1,6 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import prettyMilliseconds from "pretty-ms";
 import {
   Clock3,
   Download,
@@ -49,10 +48,6 @@ function formatEta(seconds: number | null) {
   const hours = Math.floor(totalMinutes / 60);
   const minutes = totalMinutes % 60;
   return `${hours}h ${minutes}m`;
-}
-
-function formatDuration(ms: number) {
-  return prettyMilliseconds(ms, { compact: false, unitCount: 2, secondsDecimalDigits: 0 });
 }
 
 function formatFileSize(bytes: number) {
@@ -502,9 +497,6 @@ export function Dashboard() {
                     <div className="flex items-start justify-between gap-2">
                       <div className="min-w-0">
                         <p className="truncate text-sm font-medium">{output.title}</p>
-                        <p className="text-xs text-muted-foreground">
-                          {formatDuration(output.duration_ms)} • {formatFileSize(output.size_bytes)} • {output.format.toUpperCase()}
-                        </p>
                       </div>
                       <Button
                         size="sm"
