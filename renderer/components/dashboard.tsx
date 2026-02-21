@@ -122,6 +122,8 @@ export function Dashboard() {
   const [bridgeReady, setBridgeReady] = useState(true);
   const [showQueueBottomFade, setShowQueueBottomFade] = useState(false);
   const [showGeneratedBottomFade, setShowGeneratedBottomFade] = useState(false);
+  const [generatedDeleteTarget, setGeneratedDeleteTarget] = useState<GeneratedAudio | null>(null);
+  const [deletingGeneratedId, setDeletingGeneratedId] = useState<string | null>(null);
   const queueContentRef = useRef<HTMLDivElement | null>(null);
   const generatedContentRef = useRef<HTMLDivElement | null>(null);
 
@@ -378,15 +380,20 @@ export function Dashboard() {
       return;
     }
 
-    await api.deleteGeneratedAudio(outputId);
-    setPlaybackUrls((current) => {
-      if (!current[outputId]) {
-        return current;
-      }
-      const next = { ...current };
-      delete next[outputId];
-      return next;
-    });
+    setDeletingGeneratedId(outputId);
+    try {
+      await api.deleteGeneratedAudio(outputId);
+      setPlaybackUrls((current) => {
+        if (!current[outputId]) {
+          return current;
+        }
+        const next = { ...current };
+        delete next[outputId];
+        return next;
+      });
+    } finally {
+      setDeletingGeneratedId((current) => (current === outputId ? null : current));
+    }
   }
 
   function handleQueueDragStart(jobId: string) {
@@ -555,14 +562,6 @@ export function Dashboard() {
                         <XCircle className="mr-1 h-3.5 w-3.5" /> Cancel
                       </Button>
                     )}
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      disabled={bootstrapBlockingVisible || runningJob?.id === activeJob.id}
-                      onClick={() => void getApi()?.deleteJob(activeJob.id, false)}
-                    >
-                      <Trash2 className="mr-1 h-3.5 w-3.5" /> Delete
-                    </Button>
                   </div>
 
                   <div className="space-y-2">
@@ -576,23 +575,11 @@ export function Dashboard() {
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-2 gap-3 text-sm">
-                    <div className="rounded-lg border border-border/70 bg-background/40 p-3">
-                      <p className="text-xs uppercase tracking-wide text-muted-foreground">Chapter</p>
-                      <p className="text-base font-semibold">#{activeJob.current_chapter_idx + 1}</p>
+                  {activeLog && (
+                    <div className="rounded-lg border border-primary/35 bg-primary/10 p-3">
+                      <p className="text-sm text-foreground">{activeLog.message}</p>
                     </div>
-                    <div className="rounded-lg border border-border/70 bg-background/40 p-3">
-                      <p className="text-xs uppercase tracking-wide text-muted-foreground">Characters</p>
-                      <p className="text-base font-semibold">{activeJob.processed_chars.toLocaleString()}</p>
-                    </div>
-                  </div>
-
-                  <div className="rounded-lg border border-border/70 bg-background/40 p-3 text-xs text-muted-foreground">
-                    <p>
-                      {activeJob.processed_chars.toLocaleString()} / {activeJob.total_chars.toLocaleString()} chars
-                    </p>
-                    {activeLog && <p className="mt-1">Latest: {activeLog.message}</p>}
-                  </div>
+                  )}
 
                   {activeJobDetail?.chapters && (
                     <div className="min-h-0 flex-1 space-y-1 overflow-y-auto rounded-lg border border-border/70 bg-background/40 p-2">
@@ -638,8 +625,8 @@ export function Dashboard() {
                         <Button
                           size="sm"
                           variant="ghost"
-                          disabled={bootstrapBlockingVisible}
-                          onClick={() => void handleDeleteGenerated(output.id)}
+                          disabled={bootstrapBlockingVisible || deletingGeneratedId === output.id}
+                          onClick={() => setGeneratedDeleteTarget(output)}
                         >
                           <Trash2 className="h-3.5 w-3.5" />
                         </Button>
@@ -689,6 +676,43 @@ export function Dashboard() {
               <p className="text-center text-xs text-muted-foreground">
                 The app is temporarily locked until required binaries and voice files finish downloading.
               </p>
+            </CardContent>
+          </Card>
+        </div>
+      )}
+      {generatedDeleteTarget && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-background/70 backdrop-blur-sm">
+          <Card className="w-[min(560px,92vw)] border-border/80 bg-card/95 shadow-2xl">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-base">Delete generated audio?</CardTitle>
+              <CardDescription>
+                You are about to delete "{generatedDeleteTarget.title}".
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <p className="text-sm text-muted-foreground">
+                This action is permanent. You will not be able to download this audio after deleting it.
+              </p>
+              <div className="flex justify-end gap-2">
+                <Button
+                  variant="ghost"
+                  onClick={() => setGeneratedDeleteTarget(null)}
+                  disabled={deletingGeneratedId === generatedDeleteTarget.id}
+                >
+                  Keep Audio
+                </Button>
+                <Button
+                  variant="destructive"
+                  disabled={deletingGeneratedId === generatedDeleteTarget.id}
+                  onClick={() => {
+                    const target = generatedDeleteTarget;
+                    setGeneratedDeleteTarget(null);
+                    void handleDeleteGenerated(target.id);
+                  }}
+                >
+                  <Trash2 className="mr-1 h-3.5 w-3.5" /> Delete Permanently
+                </Button>
+              </div>
             </CardContent>
           </Card>
         </div>

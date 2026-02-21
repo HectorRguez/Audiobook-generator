@@ -76,6 +76,7 @@ export class QueueManager extends EventEmitter {
   private currentChild: ChildProcessWithoutNullStreams | null = null;
   private readonly pauseRequested = new Set<string>();
   private readonly cancelRequested = new Set<string>();
+  private readonly cancelDeleteRequested = new Set<string>();
 
   private runtimeAssets: RuntimeAssets | null = null;
   private runtimeAssetsPromise: Promise<RuntimeAssets> | null = null;
@@ -284,18 +285,28 @@ export class QueueManager extends EventEmitter {
       return;
     }
 
-    this.cancelRequested.add(jobId);
     this.pauseRequested.delete(jobId);
+    this.cancelRequested.add(jobId);
 
-    if (this.currentJobId === jobId && this.currentChild) {
-      killChild(this.currentChild);
+    if (this.currentJobId === jobId) {
+      this.cancelDeleteRequested.add(jobId);
+      if (this.currentChild) {
+        killChild(this.currentChild);
+      }
+      return;
     }
 
-    if (job.status === "queued" || job.status === "paused") {
-      this.repo.setJobCanceled(jobId);
+    if (["queued", "paused", "error", "canceled"].includes(job.status)) {
+      this.cancelRequested.delete(jobId);
+      this.cancelDeleteRequested.delete(jobId);
+      this.repo.deleteJob(jobId);
       this.emitQueue();
-      this.emitJob(jobId);
+      this.emitGeneratedAudios();
+      return;
     }
+
+    this.cancelRequested.delete(jobId);
+    this.cancelDeleteRequested.delete(jobId);
   }
 
   deleteJob(jobId: string): void {
@@ -303,6 +314,9 @@ export class QueueManager extends EventEmitter {
       throw new Error("Cannot delete an actively processing job.");
     }
 
+    this.pauseRequested.delete(jobId);
+    this.cancelRequested.delete(jobId);
+    this.cancelDeleteRequested.delete(jobId);
     this.repo.deleteJob(jobId);
     this.emitQueue();
     this.emitGeneratedAudios();
@@ -605,8 +619,13 @@ export class QueueManager extends EventEmitter {
           this.repo.setJobPaused(nextJob.id);
           this.log(nextJob.id, "info", "Job paused.");
         } else if (isCanceled) {
-          this.repo.setJobCanceled(nextJob.id);
-          this.log(nextJob.id, "info", "Job canceled.");
+          if (this.cancelDeleteRequested.has(nextJob.id)) {
+            this.repo.deleteJob(nextJob.id);
+            this.emitGeneratedAudios();
+          } else {
+            this.repo.setJobCanceled(nextJob.id);
+            this.log(nextJob.id, "info", "Job canceled.");
+          }
         } else {
           this.repo.setJobError(nextJob.id, err.message || "Unexpected error");
           this.log(nextJob.id, "error", err.stack || err.message || String(err));
@@ -617,6 +636,7 @@ export class QueueManager extends EventEmitter {
       } finally {
         this.pauseRequested.delete(nextJob.id);
         this.cancelRequested.delete(nextJob.id);
+        this.cancelDeleteRequested.delete(nextJob.id);
         this.currentChild = null;
         this.currentJobId = null;
       }
