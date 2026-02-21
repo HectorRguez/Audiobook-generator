@@ -80,7 +80,7 @@ function formatBootstrapAssetName(assetId?: string) {
     return "FFmpeg";
   }
   if (assetId === "voice-default") {
-    return "Spanish voice (davefx medium)";
+    return "Spanish voice (davefx high)";
   }
   return assetId;
 }

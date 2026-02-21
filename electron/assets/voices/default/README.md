@@ -5,7 +5,7 @@ Current runtime behavior:
 - Otherwise, the first-run sidecar bootstrap downloads the default voice archive from `electron/assets/sidecar-manifest.json`.
 
 For fully offline distribution, place:
-- `es_ES-davefx-medium.onnx`
-- `es_ES-davefx-medium.onnx.json`
+- `es_ES-davefx-high.onnx`
+- `es_ES-davefx-high.onnx.json`
 
 in this directory and update `sidecar-manifest.json` to point `defaultVoiceModel/defaultVoiceConfig` here.

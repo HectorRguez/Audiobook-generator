@@ -210,7 +210,7 @@ export class QueueManager extends EventEmitter {
 
     const settings = this.repo.getSettings();
     const rows = this.repo.enqueueEpubFiles(validPaths, {
-      voiceId: settings.defaultVoiceId || "es_ES-davefx-medium",
+      voiceId: settings.defaultVoiceId || "es_ES-davefx-high",
       outputFormat: settings.defaultOutputFormat || "mp3",
       outputDir: settings.defaultOutputDir || path.join(this.appDataDir, "outputs"),
       jobSettings: {

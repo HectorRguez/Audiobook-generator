@@ -17,7 +17,7 @@
         },
         {
           "id": "voice-default",
-          "url": "https://huggingface.co/rhasspy/piper-voices/resolve/main/es/es_ES/davefx/medium/es_ES-davefx-medium.onnx?download=true",
+          "url": "https://huggingface.co/rhasspy/piper-voices/resolve/main/es/es_ES/davefx/high/es_ES-davefx-high.onnx?download=true",
           "archiveType": "none",
           "extractTo": "voice-default"
         }
@@ -25,8 +25,8 @@
       "paths": {
         "piperExe": "piper/piper/piper.exe",
         "ffmpegExe": "ffmpeg/ffmpeg-master-latest-win64-gpl-shared/bin/ffmpeg.exe",
-        "defaultVoiceModel": "voice-default/es_ES-davefx-medium.onnx",
-        "defaultVoiceConfig": "voice-default/es_ES-davefx-medium.onnx.json"
+        "defaultVoiceModel": "voice-default/es_ES-davefx-high.onnx",
+        "defaultVoiceConfig": "voice-default/es_ES-davefx-high.onnx.json"
       }
     },
     "linux-x64": {
@@ -45,7 +45,7 @@
         },
         {
           "id": "voice-default",
-          "url": "https://huggingface.co/rhasspy/piper-voices/resolve/main/es/es_ES/davefx/medium/es_ES-davefx-medium.onnx?download=true",
+          "url": "https://huggingface.co/rhasspy/piper-voices/resolve/main/es/es_ES/davefx/high/es_ES-davefx-high.onnx?download=true",
           "archiveType": "none",
           "extractTo": "voice-default"
         }
@@ -53,8 +53,8 @@
       "paths": {
         "piperExe": "piper/piper/piper",
         "ffmpegExe": "ffmpeg/ffmpeg-master-latest-linux64-gpl-shared/bin/ffmpeg",
-        "defaultVoiceModel": "voice-default/es_ES-davefx-medium.onnx",
-        "defaultVoiceConfig": "voice-default/es_ES-davefx-medium.onnx.json"
+        "defaultVoiceModel": "voice-default/es_ES-davefx-high.onnx",
+        "defaultVoiceConfig": "voice-default/es_ES-davefx-high.onnx.json"
       }
     }
   }
