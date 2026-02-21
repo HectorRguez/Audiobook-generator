@@ -249,8 +249,8 @@ function registerIpcHandlers(): void {
   ipcMain.handle(commands.LIST_VOICES, async (): Promise<VoiceInfo[]> => {
     return [
       {
-        id: "es_ES-sharvard-high",
-        name: "Español (es_ES-sharvard-high)",
+        id: "es_ES-carlfm-high",
+        name: "Español (es_ES-carlfm-high)",
         modelPath: process.env.PIPER_VOICE_MODEL || null
       }
     ];
@@ -303,7 +303,7 @@ async function bootstrap(): Promise<void> {
   const defaultOutputDir = path.join(app.getPath("documents"), "Audiobooks");
   repo.ensureDefaults({
     defaultOutputDir,
-    defaultVoiceId: "es_ES-sharvard-high",
+    defaultVoiceId: "es_ES-carlfm-high",
     defaultOutputFormat: "mp3",
     keepIntermediates: false,
     maxConcurrentJobs: 1

@@ -1,5 +1,5 @@
 {
-  "version": "2026.02.21.2",
+  "version": "2026.02.21.3",
   "platforms": {
     "win32-x64": {
       "archives": [
@@ -17,7 +17,7 @@
         },
         {
           "id": "voice-default",
-          "url": "https://huggingface.co/datasets/rhasspy/piper-voices/resolve/v1.0.0/es/es_ES/sharvard/high/es_ES-sharvard-high.onnx?download=true",
+          "url": "https://huggingface.co/friyin/vits-piper-es_ES-carlfm-high/resolve/main/es_ES-carlfm-high.onnx?download=true",
           "archiveType": "none",
           "extractTo": "voice-default"
         }
@@ -25,8 +25,8 @@
       "paths": {
         "piperExe": "piper/piper/piper.exe",
         "ffmpegExe": "ffmpeg/ffmpeg-master-latest-win64-gpl-shared/bin/ffmpeg.exe",
-        "defaultVoiceModel": "voice-default/es_ES-sharvard-high.onnx",
-        "defaultVoiceConfig": "voice-default/es_ES-sharvard-high.onnx.json"
+        "defaultVoiceModel": "voice-default/es_ES-carlfm-high.onnx",
+        "defaultVoiceConfig": "voice-default/es_ES-carlfm-high.onnx.json"
       }
     },
     "linux-x64": {
@@ -45,7 +45,7 @@
         },
         {
           "id": "voice-default",
-          "url": "https://huggingface.co/datasets/rhasspy/piper-voices/resolve/v1.0.0/es/es_ES/sharvard/high/es_ES-sharvard-high.onnx?download=true",
+          "url": "https://huggingface.co/friyin/vits-piper-es_ES-carlfm-high/resolve/main/es_ES-carlfm-high.onnx?download=true",
           "archiveType": "none",
           "extractTo": "voice-default"
         }
@@ -53,8 +53,8 @@
       "paths": {
         "piperExe": "piper/piper/piper",
         "ffmpegExe": "ffmpeg/ffmpeg-master-latest-linux64-gpl-shared/bin/ffmpeg",
-        "defaultVoiceModel": "voice-default/es_ES-sharvard-high.onnx",
-        "defaultVoiceConfig": "voice-default/es_ES-sharvard-high.onnx.json"
+        "defaultVoiceModel": "voice-default/es_ES-carlfm-high.onnx",
+        "defaultVoiceConfig": "voice-default/es_ES-carlfm-high.onnx.json"
       }
     }
   }
