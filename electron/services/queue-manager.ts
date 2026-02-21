@@ -564,6 +564,15 @@ export class QueueManager extends EventEmitter {
   private async processJob(job: JobRow): Promise<void> {
     this.currentJobId = job.id;
     this.currentChild = null;
+    this.repo.updateJob({
+      id: job.id,
+      status: "processing",
+      error_message: null,
+      eta_seconds: null,
+      started_at: job.started_at ?? Date.now()
+    });
+    this.emitQueue();
+    this.emitJob(job.id);
 
     const assets = await this.bootstrapAssets();
     const workDir = path.join(this.appDataDir, "work", job.id);

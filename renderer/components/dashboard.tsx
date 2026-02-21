@@ -28,6 +28,7 @@ import {
   Pause,
   Play,
   Plus,
+  Settings,
   Trash2,
   XCircle
 } from "lucide-react";
@@ -43,6 +44,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 function statusVariant(status: JobStatus) {
   if (status === "error" || status === "canceled") {
@@ -54,9 +56,59 @@ function statusVariant(status: JobStatus) {
   return "secondary" as const;
 }
 
-function formatEta(seconds: number | null) {
+const BOOTSTRAP_INIT_ERROR = "Failed to bootstrap runtime assets";
+const BRIDGE_UNAVAILABLE_ERROR = "Electron bridge unavailable in this view. Use the Electron app window started by `npm run dev`.";
+
+type UiLocale = "en" | "es";
+
+interface UiStrings {
+  appTitle: string;
+  addEpubFiles: string;
+  settings: string;
+  bridgeUnavailableBadge: string;
+  queueTitle: string;
+  queueDescription: string;
+  queueEmpty: string;
+  generatedTitle: string;
+  generatedDescription: string;
+  noGenerated: string;
+  pause: string;
+  resume: string;
+  cancel: string;
+  estimatingEta: string;
+  runtimeAsset: string;
+  piperEngine: string;
+  spanishVoice: string;
+  bootstrapPhaseDownloading: string;
+  bootstrapPhaseExtracting: string;
+  bootstrapPhaseReady: string;
+  bootstrapPhaseError: string;
+  bootstrapPreparingTitle: string;
+  unknownSize: string;
+  runtimeLockedMessage: string;
+  deleteGeneratedTitle: string;
+  deleteGeneratedSubtitlePrefix: string;
+  deleteGeneratedPermanentWarning: string;
+  keepAudio: string;
+  deletePermanently: string;
+  settingsTitle: string;
+  settingsDescription: string;
+  languageLabel: string;
+  languageSpanish: string;
+  languageEnglish: string;
+  close: string;
+  reorderAriaPrefix: string;
+  deleteQueueAriaPrefix: string;
+  downloadAudioAriaPrefix: string;
+  deleteAudioAriaPrefix: string;
+  bridgeUnavailableDetail: string;
+  bootstrapInitFailed: string;
+  statusLabels: Record<JobStatus, string>;
+}
+
+function formatEta(seconds: number | null, uiStrings: UiStrings) {
   if (seconds === null || Number.isNaN(seconds)) {
-    return "Estimating...";
+    return uiStrings.estimatingEta;
   }
 
   if (seconds <= 0) {
@@ -81,43 +133,180 @@ function formatFileSize(bytes: number) {
   return `${value.toFixed(1)} ${unit}`;
 }
 
-function formatBootstrapAssetName(assetId?: string) {
+function formatBootstrapAssetName(assetId: string | undefined, uiStrings: UiStrings) {
   if (!assetId) {
-    return "Runtime asset";
+    return uiStrings.runtimeAsset;
   }
 
   if (assetId === "piper") {
-    return "Piper engine";
+    return uiStrings.piperEngine;
   }
   if (assetId === "ffmpeg") {
     return "FFmpeg";
   }
   if (assetId === "voice-default") {
-    return "Spanish voice (es_ES-carlfm-high)";
+    return uiStrings.spanishVoice;
   }
   return assetId;
 }
 
-function formatBootstrapPhase(phase: BootstrapStatus["phase"]) {
+function formatBootstrapPhase(phase: BootstrapStatus["phase"], uiStrings: UiStrings) {
   if (phase === "downloading") {
-    return "Downloading";
+    return uiStrings.bootstrapPhaseDownloading;
   }
   if (phase === "extracting") {
-    return "Extracting";
+    return uiStrings.bootstrapPhaseExtracting;
   }
   if (phase === "ready") {
-    return "Ready";
+    return uiStrings.bootstrapPhaseReady;
   }
-  return "Error";
+  return uiStrings.bootstrapPhaseError;
+}
+
+function localizeStatus(status: JobStatus, uiStrings: UiStrings) {
+  return uiStrings.statusLabels[status] ?? status;
+}
+
+function localizeKnownRuntimeMessage(message: string, uiStrings: UiStrings) {
+  if (message === BOOTSTRAP_INIT_ERROR) {
+    return uiStrings.bootstrapInitFailed;
+  }
+  if (message === BRIDGE_UNAVAILABLE_ERROR) {
+    return uiStrings.bridgeUnavailableDetail;
+  }
+  return message;
+}
+
+const UI_STRINGS: Record<UiLocale, UiStrings> = {
+  en: {
+    appTitle: "Audiobook Generator",
+    addEpubFiles: "Add EPUB Files",
+    settings: "Settings",
+    bridgeUnavailableBadge: "Desktop bridge unavailable",
+    queueTitle: "Processing Queue",
+    queueDescription: "Drag rows to reorder. Drop EPUB files here to enqueue.",
+    queueEmpty: "Queue is empty. Add one or more EPUB files.",
+    generatedTitle: "Generated Audios",
+    generatedDescription: "Newest first. Export any completed audiobook.",
+    noGenerated: "No generated audiobooks yet.",
+    pause: "Pause",
+    resume: "Resume",
+    cancel: "Cancel",
+    estimatingEta: "Estimating...",
+    runtimeAsset: "Runtime asset",
+    piperEngine: "Piper engine",
+    spanishVoice: "Spanish voice (es_ES-carlfm-high)",
+    bootstrapPhaseDownloading: "Downloading",
+    bootstrapPhaseExtracting: "Extracting",
+    bootstrapPhaseReady: "Ready",
+    bootstrapPhaseError: "Error",
+    bootstrapPreparingTitle: "Preparing Runtime Assets",
+    unknownSize: "Unknown",
+    runtimeLockedMessage: "The app is temporarily locked until required binaries and voice files finish downloading.",
+    deleteGeneratedTitle: "Delete generated audio?",
+    deleteGeneratedSubtitlePrefix: "You are about to delete",
+    deleteGeneratedPermanentWarning: "This action is permanent. You will not be able to download this audio after deleting it.",
+    keepAudio: "Keep Audio",
+    deletePermanently: "Delete Permanently",
+    settingsTitle: "Settings",
+    settingsDescription: "Choose your interface language.",
+    languageLabel: "Language",
+    languageSpanish: "Spanish",
+    languageEnglish: "English",
+    close: "Close",
+    reorderAriaPrefix: "Reorder",
+    deleteQueueAriaPrefix: "Delete queue item",
+    downloadAudioAriaPrefix: "Download generated audio",
+    deleteAudioAriaPrefix: "Delete generated audio",
+    bridgeUnavailableDetail: "Electron bridge unavailable in this view. Use the Electron app window started by `npm run dev`.",
+    bootstrapInitFailed: "Failed to bootstrap runtime assets",
+    statusLabels: {
+      queued: "Queued",
+      extracting: "Extracting",
+      processing: "Processing",
+      encoding: "Encoding",
+      done: "Done",
+      error: "Error",
+      paused: "Paused",
+      canceled: "Canceled"
+    }
+  },
+  es: {
+    appTitle: "Generador de Audiolibros",
+    addEpubFiles: "Agregar archivos EPUB",
+    settings: "Ajustes",
+    bridgeUnavailableBadge: "Puente de escritorio no disponible",
+    queueTitle: "Cola de procesamiento",
+    queueDescription: "Arrastra filas para reordenar. Suelta archivos EPUB aqui para encolarlos.",
+    queueEmpty: "La cola esta vacia. Agrega uno o mas archivos EPUB.",
+    generatedTitle: "Audios generados",
+    generatedDescription: "Mas recientes primero. Exporta cualquier audiolibro completado.",
+    noGenerated: "Todavia no hay audiolibros generados.",
+    pause: "Pausar",
+    resume: "Reanudar",
+    cancel: "Cancelar",
+    estimatingEta: "Estimando...",
+    runtimeAsset: "Recurso del runtime",
+    piperEngine: "Motor Piper",
+    spanishVoice: "Voz en espanol (es_ES-carlfm-high)",
+    bootstrapPhaseDownloading: "Descargando",
+    bootstrapPhaseExtracting: "Extrayendo",
+    bootstrapPhaseReady: "Listo",
+    bootstrapPhaseError: "Error",
+    bootstrapPreparingTitle: "Preparando recursos del runtime",
+    unknownSize: "Desconocido",
+    runtimeLockedMessage: "La app esta bloqueada temporalmente hasta que terminen de descargarse los binarios y voces requeridos.",
+    deleteGeneratedTitle: "Eliminar audio generado?",
+    deleteGeneratedSubtitlePrefix: "Estas a punto de eliminar",
+    deleteGeneratedPermanentWarning: "Esta accion es permanente. No podras descargar este audio despues de eliminarlo.",
+    keepAudio: "Conservar audio",
+    deletePermanently: "Eliminar permanentemente",
+    settingsTitle: "Ajustes",
+    settingsDescription: "Elige el idioma de la interfaz.",
+    languageLabel: "Idioma",
+    languageSpanish: "Espanol",
+    languageEnglish: "Ingles",
+    close: "Cerrar",
+    reorderAriaPrefix: "Reordenar",
+    deleteQueueAriaPrefix: "Eliminar elemento de la cola",
+    downloadAudioAriaPrefix: "Descargar audio generado",
+    deleteAudioAriaPrefix: "Eliminar audio generado",
+    bridgeUnavailableDetail: "El puente de Electron no esta disponible en esta vista. Usa la ventana de la app iniciada con `npm run dev`.",
+    bootstrapInitFailed: "No se pudieron preparar los recursos del runtime",
+    statusLabels: {
+      queued: "En cola",
+      extracting: "Extrayendo",
+      processing: "Procesando",
+      encoding: "Codificando",
+      done: "Completado",
+      error: "Error",
+      paused: "Pausado",
+      canceled: "Cancelado"
+    }
+  }
+};
+
+function resolveUiLocale(locales: readonly string[]): UiLocale {
+  for (const locale of locales) {
+    const normalized = locale.toLowerCase();
+    if (normalized.startsWith("es")) {
+      return "es";
+    }
+    if (normalized.startsWith("en")) {
+      return "en";
+    }
+  }
+  return "es";
 }
 
 interface SortableQueueRowProps {
   job: QueueJob;
+  uiStrings: UiStrings;
   bootstrapBlockingVisible: boolean;
   onDelete: (jobId: string) => void;
 }
 
-function SortableQueueRow({ job, bootstrapBlockingVisible, onDelete }: SortableQueueRowProps) {
+function SortableQueueRow({ job, uiStrings, bootstrapBlockingVisible, onDelete }: SortableQueueRowProps) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: job.id
   });
@@ -139,7 +328,8 @@ function SortableQueueRow({ job, bootstrapBlockingVisible, onDelete }: SortableQ
             <button
               type="button"
               className="touch-none cursor-grab rounded p-0.5 text-muted-foreground transition hover:text-foreground active:cursor-grabbing"
-              aria-label={`Reorder ${job.title}`}
+              aria-label={`${uiStrings.reorderAriaPrefix}: ${job.title}`}
+              title={`${uiStrings.reorderAriaPrefix}: ${job.title}`}
               {...attributes}
               {...listeners}
             >
@@ -153,6 +343,8 @@ function SortableQueueRow({ job, bootstrapBlockingVisible, onDelete }: SortableQ
           size="sm"
           variant="ghost"
           disabled={bootstrapBlockingVisible}
+          aria-label={`${uiStrings.deleteQueueAriaPrefix}: ${job.title}`}
+          title={`${uiStrings.deleteQueueAriaPrefix}: ${job.title}`}
           onClick={() => onDelete(job.id)}
         >
           <Trash2 className="h-3.5 w-3.5" />
@@ -188,7 +380,7 @@ function QueueRowDragOverlay({ job }: { job: QueueJob }) {
   );
 }
 
-function DisabledQueueRow({ job }: { job: QueueJob }) {
+function DisabledQueueRow({ job, uiStrings }: { job: QueueJob; uiStrings: UiStrings }) {
   return (
     <div
       aria-disabled="true"
@@ -202,7 +394,7 @@ function DisabledQueueRow({ job }: { job: QueueJob }) {
           </div>
           <p className="truncate text-xs text-muted-foreground">{job.source_name}</p>
         </div>
-        <Badge variant={statusVariant(job.status)}>{job.status}</Badge>
+        <Badge variant={statusVariant(job.status)}>{localizeStatus(job.status, uiStrings)}</Badge>
       </div>
     </div>
   );
@@ -223,6 +415,8 @@ export function Dashboard() {
   const [showGeneratedBottomFade, setShowGeneratedBottomFade] = useState(false);
   const [generatedDeleteTarget, setGeneratedDeleteTarget] = useState<GeneratedAudio | null>(null);
   const [deletingGeneratedId, setDeletingGeneratedId] = useState<string | null>(null);
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [uiLocale, setUiLocale] = useState<UiLocale>("es");
   const queueOrderIdsRef = useRef<string[]>([]);
   const queueContentRef = useRef<HTMLDivElement | null>(null);
   const generatedContentRef = useRef<HTMLDivElement | null>(null);
@@ -275,7 +469,7 @@ export function Dashboard() {
       void api.bootstrapAssets().catch((error: unknown) => {
         setBootstrapStatus({
           phase: "error",
-          message: error instanceof Error ? error.message : "Failed to bootstrap runtime assets"
+          message: error instanceof Error ? error.message : BOOTSTRAP_INIT_ERROR
         });
       });
     };
@@ -287,7 +481,7 @@ export function Dashboard() {
       setBridgeReady(false);
       setBootstrapStatus({
         phase: "error",
-        message: "Electron bridge unavailable in this view. Use the Electron app window started by `npm run dev`."
+        message: BRIDGE_UNAVAILABLE_ERROR
       });
       pollTimer = setInterval(() => {
         const api = getApi();
@@ -361,6 +555,35 @@ export function Dashboard() {
     return [...logs].reverse().find((entry) => entry.jobId === activeJob.id) || null;
   }, [activeJob, logs]);
   const activeJobDetail = activeJob ? jobDetails[activeJob.id] : undefined;
+  const uiStrings = UI_STRINGS[uiLocale];
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      setUiLocale("es");
+      return;
+    }
+
+    const storedLocale = window.localStorage.getItem("ui-locale");
+    if (storedLocale === "es" || storedLocale === "en") {
+      setUiLocale(storedLocale);
+      return;
+    }
+
+    const browserLocales = navigator.languages && navigator.languages.length > 0
+      ? navigator.languages
+      : [navigator.language];
+    setUiLocale(resolveUiLocale(browserLocales));
+  }, []);
+
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      window.localStorage.setItem("ui-locale", uiLocale);
+    }
+    if (typeof document !== "undefined") {
+      document.documentElement.lang = uiLocale;
+      document.title = uiStrings.appTitle;
+    }
+  }, [uiLocale, uiStrings.appTitle]);
 
   useEffect(() => {
     if (activeQueueDragId) {
@@ -584,16 +807,19 @@ export function Dashboard() {
     <main className="h-screen w-full p-4 lg:p-6">
       <div className="mx-auto flex h-full max-w-[1800px] flex-col gap-4">
         <header className="flex items-start gap-3">
-          <h1 className="text-left text-2xl font-semibold">Audiobook Generator</h1>
+          <h1 className="text-left text-2xl font-semibold">{uiStrings.appTitle}</h1>
           <div className="ml-auto flex flex-wrap items-center justify-end gap-2">
-            {!bridgeReady && <Badge variant="destructive">Desktop bridge unavailable</Badge>}
+            {!bridgeReady && <Badge variant="destructive">{uiStrings.bridgeUnavailableBadge}</Badge>}
             {bootstrapStatus?.phase === "error" && !bootstrapBlockingVisible && (
               <Badge variant="destructive">
-                {bootstrapStatus.phase}: {bootstrapStatus.message}
+                {formatBootstrapPhase(bootstrapStatus.phase, uiStrings)}: {localizeKnownRuntimeMessage(bootstrapStatus.message, uiStrings)}
               </Badge>
             )}
             <Button onClick={addFiles} disabled={isBusy || bootstrapBlockingVisible}>
-              <Plus className="mr-2 h-4 w-4" /> Add EPUB Files
+              <Plus className="mr-2 h-4 w-4" /> {uiStrings.addEpubFiles}
+            </Button>
+            <Button variant="outline" disabled={bootstrapBlockingVisible} onClick={() => setIsSettingsOpen(true)}>
+              <Settings className="mr-2 h-4 w-4" /> {uiStrings.settings}
             </Button>
           </div>
         </header>
@@ -610,19 +836,19 @@ export function Dashboard() {
             }}
           >
             <CardHeader>
-              <CardTitle>Processing Queue</CardTitle>
-              <CardDescription>Drag rows to reorder. Drop EPUB files here to enqueue.</CardDescription>
+              <CardTitle>{uiStrings.queueTitle}</CardTitle>
+              <CardDescription>{uiStrings.queueDescription}</CardDescription>
             </CardHeader>
             <CardContent ref={queueContentRef} className="relative min-h-0 flex-1 space-y-2 overflow-y-auto pb-4">
               {!processingQueueJob && visibleQueueJobs.length === 0 ? (
                 <p className="rounded-lg border border-dashed border-border/70 bg-background/30 p-4 text-sm text-muted-foreground">
-                  Queue is empty. Add one or more EPUB files.
+                  {uiStrings.queueEmpty}
                 </p>
               ) : (
                 <>
                   {processingQueueJob && (
                     <div className="relative z-10">
-                      <DisabledQueueRow job={processingQueueJob} />
+                      <DisabledQueueRow job={processingQueueJob} uiStrings={uiStrings} />
                     </div>
                   )}
                   {visibleQueueJobs.length > 0 && (
@@ -646,6 +872,7 @@ export function Dashboard() {
                             <SortableQueueRow
                               key={job.id}
                               job={job}
+                              uiStrings={uiStrings}
                               bootstrapBlockingVisible={bootstrapBlockingVisible}
                               onDelete={(jobId) => void getApi()?.deleteJob(jobId, false)}
                             />
@@ -676,11 +903,6 @@ export function Dashboard() {
                   <div className="flex flex-col items-center gap-3 text-center">
                     <div className="relative overflow-visible rounded-2xl border border-border/70 bg-background/80 p-6">
                       <FileAudio2 className="h-14 w-14 text-primary" />
-                      {activeJob.status !== "processing" && (
-                        <Badge variant={statusVariant(activeJob.status)} className="absolute right-2 top-2">
-                          {activeJob.status}
-                        </Badge>
-                      )}
                     </div>
                     <p className="line-clamp-2 text-sm font-semibold">{activeJob.title}</p>
                     <p className="line-clamp-1 text-xs text-muted-foreground">{activeJob.source_name}</p>
@@ -689,17 +911,17 @@ export function Dashboard() {
                   <div className="flex flex-wrap items-center justify-center gap-2">
                     {["queued", "extracting", "processing", "encoding"].includes(activeJob.status) && (
                       <Button size="sm" variant="secondary" onClick={() => void getApi()?.pauseJob(activeJob.id)}>
-                        <Pause className="mr-1 h-3.5 w-3.5" /> Pause
+                        <Pause className="mr-1 h-3.5 w-3.5" /> {uiStrings.pause}
                       </Button>
                     )}
                     {["paused", "error"].includes(activeJob.status) && (
                       <Button size="sm" variant="secondary" onClick={() => void getApi()?.resumeJob(activeJob.id)}>
-                        <Play className="mr-1 h-3.5 w-3.5" /> Resume
+                        <Play className="mr-1 h-3.5 w-3.5" /> {uiStrings.resume}
                       </Button>
                     )}
                     {!["done", "canceled"].includes(activeJob.status) && (
                       <Button size="sm" variant="destructive" onClick={() => void getApi()?.cancelJob(activeJob.id)}>
-                        <XCircle className="mr-1 h-3.5 w-3.5" /> Cancel
+                        <XCircle className="mr-1 h-3.5 w-3.5" /> {uiStrings.cancel}
                       </Button>
                     )}
                   </div>
@@ -710,7 +932,7 @@ export function Dashboard() {
                       <span>{Math.round((activeJob.progress || 0) * 100)}%</span>
                       <span className="inline-flex items-center gap-1">
                         <Clock3 className="h-3.5 w-3.5" />
-                        {formatEta(activeJob.eta_seconds)}
+                        {formatEta(activeJob.eta_seconds, uiStrings)}
                       </span>
                     </div>
                   </div>
@@ -723,9 +945,12 @@ export function Dashboard() {
 
                   {activeJobDetail?.chapters && (
                     <div className="min-h-0 flex-1 space-y-1 overflow-y-auto rounded-lg border border-border/70 bg-background/40 p-2">
-                      {activeJobDetail.chapters.map((chapter) => (
+                      {activeJobDetail.chapters.map((chapter, index) => (
                         <div key={chapter.id} className="flex items-center justify-between rounded-md px-2 py-1 text-xs">
-                          <span className="truncate">{chapter.title}</span>
+                          <div className="min-w-0 flex items-center gap-2">
+                            <span className="w-6 shrink-0 text-right text-muted-foreground">{index + 1}.</span>
+                            <span className="truncate">{chapter.title}</span>
+                          </div>
                           <span className="text-muted-foreground">
                             {chapter.chunk_cursor}/{chapter.total_chunks}
                           </span>
@@ -740,12 +965,12 @@ export function Dashboard() {
 
           <Card className="flex h-full min-h-0 flex-col">
             <CardHeader>
-              <CardTitle>Generated Audios</CardTitle>
-              <CardDescription>Newest first. Export any completed audiobook.</CardDescription>
+              <CardTitle>{uiStrings.generatedTitle}</CardTitle>
+              <CardDescription>{uiStrings.generatedDescription}</CardDescription>
             </CardHeader>
             <CardContent ref={generatedContentRef} className="relative min-h-0 flex-1 space-y-2 overflow-y-auto pb-4">
               {generated.length === 0 ? (
-                <p className="text-sm text-muted-foreground">No generated audiobooks yet.</p>
+                <p className="text-sm text-muted-foreground">{uiStrings.noGenerated}</p>
               ) : (
                 generated.map((output) => (
                   <div key={output.id} className="rounded-lg border border-border/70 bg-background/50 p-3">
@@ -758,6 +983,8 @@ export function Dashboard() {
                           size="sm"
                           variant="ghost"
                           disabled={bootstrapBlockingVisible}
+                          aria-label={`${uiStrings.downloadAudioAriaPrefix}: ${output.title}`}
+                          title={`${uiStrings.downloadAudioAriaPrefix}: ${output.title}`}
                           onClick={() => void getApi()?.downloadGeneratedAudio(output.id)}
                         >
                           <Download className="h-3.5 w-3.5" />
@@ -766,6 +993,8 @@ export function Dashboard() {
                           size="sm"
                           variant="ghost"
                           disabled={bootstrapBlockingVisible || deletingGeneratedId === output.id}
+                          aria-label={`${uiStrings.deleteAudioAriaPrefix}: ${output.title}`}
+                          title={`${uiStrings.deleteAudioAriaPrefix}: ${output.title}`}
                           onClick={() => setGeneratedDeleteTarget(output)}
                         >
                           <Trash2 className="h-3.5 w-3.5" />
@@ -797,10 +1026,10 @@ export function Dashboard() {
           <Card className="w-[min(560px,92vw)] border-border/80 bg-card/95 shadow-2xl">
             <CardHeader className="pb-2 text-center">
               <CardTitle className="text-base">
-                Preparing Runtime Assets ({bootstrapStatus.itemIndex ?? 0}/{bootstrapStatus.totalItems ?? 0})
+                {uiStrings.bootstrapPreparingTitle} ({bootstrapStatus.itemIndex ?? 0}/{bootstrapStatus.totalItems ?? 0})
               </CardTitle>
               <CardDescription>
-                {formatBootstrapPhase(bootstrapStatus.phase)} {formatBootstrapAssetName(bootstrapStatus.assetId)}
+                {formatBootstrapPhase(bootstrapStatus.phase, uiStrings)} {formatBootstrapAssetName(bootstrapStatus.assetId, uiStrings)}
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-3">
@@ -810,11 +1039,11 @@ export function Dashboard() {
                 <span>
                   {typeof bootstrapStatus.downloadedBytes === "number" ? formatFileSize(bootstrapStatus.downloadedBytes) : "0 B"}
                   {" / "}
-                  {typeof bootstrapStatus.totalBytes === "number" ? formatFileSize(bootstrapStatus.totalBytes) : "Unknown"}
+                  {typeof bootstrapStatus.totalBytes === "number" ? formatFileSize(bootstrapStatus.totalBytes) : uiStrings.unknownSize}
                 </span>
               </div>
               <p className="text-center text-xs text-muted-foreground">
-                The app is temporarily locked until required binaries and voice files finish downloading.
+                {uiStrings.runtimeLockedMessage}
               </p>
             </CardContent>
           </Card>
@@ -824,14 +1053,14 @@ export function Dashboard() {
         <div className="fixed inset-0 z-[60] flex items-center justify-center bg-background/70 backdrop-blur-sm">
           <Card className="w-[min(560px,92vw)] border-border/80 bg-card/95 shadow-2xl">
             <CardHeader className="pb-2">
-              <CardTitle className="text-base">Delete generated audio?</CardTitle>
+              <CardTitle className="text-base">{uiStrings.deleteGeneratedTitle}</CardTitle>
               <CardDescription>
-                You are about to delete "{generatedDeleteTarget.title}".
+                {uiStrings.deleteGeneratedSubtitlePrefix} "{generatedDeleteTarget.title}".
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
               <p className="text-sm text-muted-foreground">
-                This action is permanent. You will not be able to download this audio after deleting it.
+                {uiStrings.deleteGeneratedPermanentWarning}
               </p>
               <div className="flex justify-end gap-2">
                 <Button
@@ -839,7 +1068,7 @@ export function Dashboard() {
                   onClick={() => setGeneratedDeleteTarget(null)}
                   disabled={deletingGeneratedId === generatedDeleteTarget.id}
                 >
-                  Keep Audio
+                  {uiStrings.keepAudio}
                 </Button>
                 <Button
                   variant="destructive"
@@ -850,7 +1079,41 @@ export function Dashboard() {
                     void handleDeleteGenerated(target.id);
                   }}
                 >
-                  <Trash2 className="mr-1 h-3.5 w-3.5" /> Delete Permanently
+                  <Trash2 className="mr-1 h-3.5 w-3.5" /> {uiStrings.deletePermanently}
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      )}
+      {isSettingsOpen && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-background/70 backdrop-blur-sm">
+          <Card className="w-[min(560px,92vw)] border-border/80 bg-card/95 shadow-2xl">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-base">{uiStrings.settingsTitle}</CardTitle>
+              <CardDescription>{uiStrings.settingsDescription}</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="space-y-2">
+                <label htmlFor="ui-language" className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                  {uiStrings.languageLabel}
+                </label>
+                <Select
+                  value={uiLocale}
+                  onValueChange={(value) => setUiLocale(value as UiLocale)}
+                >
+                  <SelectTrigger id="ui-language">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="es">{uiStrings.languageSpanish}</SelectItem>
+                    <SelectItem value="en">{uiStrings.languageEnglish}</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="flex justify-end">
+                <Button variant="ghost" onClick={() => setIsSettingsOpen(false)}>
+                  {uiStrings.close}
                 </Button>
               </div>
             </CardContent>

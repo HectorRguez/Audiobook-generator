@@ -2,8 +2,8 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Audiobook Generator",
-  description: "EPUB to audiobook desktop pipeline",
+  title: "Generador de Audiolibros",
+  description: "Flujo de escritorio para convertir EPUB en audiolibro",
   icons: {
     icon: "/app-icon.png",
     shortcut: "/app-icon.png",
@@ -13,7 +13,7 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
-    <html lang="en">
+    <html lang="es">
       <body>{children}</body>
     </html>
   );
