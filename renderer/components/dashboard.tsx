@@ -6,7 +6,6 @@ import {
   Clock3,
   Download,
   FileAudio2,
-  FolderOpen,
   GripVertical,
   Pause,
   Play,
@@ -123,7 +122,6 @@ export function Dashboard() {
   const [logs, setLogs] = useState<LogEvent[]>([]);
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const [isBusy, setIsBusy] = useState(false);
-  const [loadingPlaybackId, setLoadingPlaybackId] = useState<string | null>(null);
   const [bridgeReady, setBridgeReady] = useState(true);
 
   function getApi() {
@@ -237,6 +235,29 @@ export function Dashboard() {
     ? (bootstrapStatus?.phase === "extracting" ? 100 : 10)
     : Math.round(bootstrapStatus.progress * 100);
 
+  useEffect(() => {
+    const api = getApi();
+    if (!api || bootstrapBlockingVisible) {
+      return;
+    }
+
+    const missingOutputIds = generated
+      .map((output) => output.id)
+      .filter((outputId) => !playbackUrls[outputId]);
+
+    if (missingOutputIds.length === 0) {
+      return;
+    }
+
+    missingOutputIds.forEach((outputId) => {
+      void api.getGeneratedPlaybackUrl(outputId).then((url) => {
+        setPlaybackUrls((current) => (current[outputId] ? current : { ...current, [outputId]: url }));
+      }).catch(() => {
+        // Keep download action usable even if preview URL generation fails.
+      });
+    });
+  }, [bootstrapBlockingVisible, generated, playbackUrls]);
+
   async function addFiles() {
     const api = getApi();
     if (!api) {
@@ -297,25 +318,6 @@ export function Dashboard() {
     setDraggingId(null);
 
     await api.reorderQueue(next.map((job) => job.id));
-  }
-
-  async function loadPlaybackUrl(outputId: string) {
-    const api = getApi();
-    if (!api) {
-      setBridgeReady(false);
-      return;
-    }
-    if (playbackUrls[outputId]) {
-      return;
-    }
-
-    setLoadingPlaybackId(outputId);
-    try {
-      const url = await api.getGeneratedPlaybackUrl(outputId);
-      setPlaybackUrls((current) => ({ ...current, [outputId]: url }));
-    } finally {
-      setLoadingPlaybackId((current) => (current === outputId ? null : current));
-    }
   }
 
   return (
@@ -496,27 +498,14 @@ export function Dashboard() {
                 <p className="text-sm text-muted-foreground">No generated audiobooks yet.</p>
               ) : (
                 generated.map((output) => (
-                  <div key={output.id} className="flex items-center justify-between gap-2 rounded-lg border border-border/70 bg-background/50 p-3">
-                    <div className="min-w-0">
-                      <p className="truncate text-sm font-medium">{output.title}</p>
-                      <p className="text-xs text-muted-foreground">
-                        {formatDuration(output.duration_ms)} • {formatFileSize(output.size_bytes)} • {output.format.toUpperCase()}
-                      </p>
-                      {playbackUrls[output.id] ? (
-                        <audio controls preload="none" className="mt-2 h-8 w-full" src={playbackUrls[output.id]} />
-                      ) : (
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          className="mt-2"
-                          disabled={loadingPlaybackId === output.id || bootstrapBlockingVisible}
-                          onClick={() => void loadPlaybackUrl(output.id)}
-                        >
-                          {loadingPlaybackId === output.id ? "Loading..." : "Test player"}
-                        </Button>
-                      )}
-                    </div>
-                    <div className="flex shrink-0 gap-1">
+                  <div key={output.id} className="rounded-lg border border-border/70 bg-background/50 p-3">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-medium">{output.title}</p>
+                        <p className="text-xs text-muted-foreground">
+                          {formatDuration(output.duration_ms)} • {formatFileSize(output.size_bytes)} • {output.format.toUpperCase()}
+                        </p>
+                      </div>
                       <Button
                         size="sm"
                         variant="secondary"
@@ -525,15 +514,8 @@ export function Dashboard() {
                       >
                         <Download className="h-3.5 w-3.5" />
                       </Button>
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        disabled={bootstrapBlockingVisible}
-                        onClick={() => void getApi()?.openOutputFolder(output.job_id)}
-                      >
-                        <FolderOpen className="h-3.5 w-3.5" />
-                      </Button>
                     </div>
+                    <audio controls preload="none" className="mt-3 h-9 w-full" src={playbackUrls[output.id]} />
                   </div>
                 ))
               )}
