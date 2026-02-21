@@ -6,6 +6,8 @@ import {
   BrowserWindow,
   dialog,
   ipcMain,
+  net,
+  protocol,
   shell
 } from "electron";
 import { autoUpdater } from "electron-updater";
@@ -18,6 +20,19 @@ import type { AppSettings, VoiceInfo } from "./types";
 let mainWindow: BrowserWindow | null = null;
 let repo: Repository | null = null;
 let queueManager: QueueManager | null = null;
+
+protocol.registerSchemesAsPrivileged([
+  {
+    scheme: "audiobook",
+    privileges: {
+      standard: true,
+      secure: true,
+      supportFetchAPI: true,
+      corsEnabled: true,
+      stream: true
+    }
+  }
+]);
 
 const DEV_URL = process.env.ELECTRON_START_URL || "http://127.0.0.1:3000";
 
@@ -161,6 +176,14 @@ function registerIpcHandlers(): void {
   });
 
   ipcMain.handle(commands.LIST_GENERATED, async () => requireQueueManager().listGeneratedAudios());
+  ipcMain.handle(commands.GET_GENERATED_PLAYBACK_URL, async (_event, outputId: string) => {
+    const qm = requireQueueManager();
+    const output = qm.getGeneratedAudio(outputId);
+    if (!output) {
+      throw new Error("Generated audio not found.");
+    }
+    return `audiobook://generated/${encodeURIComponent(outputId)}`;
+  });
 
   ipcMain.handle(commands.DOWNLOAD_GENERATED, async (_event, outputId: string) => {
     const qm = requireQueueManager();
@@ -207,6 +230,32 @@ function registerIpcHandlers(): void {
   ipcMain.handle(commands.BOOTSTRAP_ASSETS, async () => requireQueueManager().bootstrapAssets());
 }
 
+function registerCustomProtocols(): void {
+  protocol.handle("audiobook", async (request) => {
+    try {
+      const parsed = new URL(request.url);
+      if (parsed.hostname !== "generated") {
+        return new Response("Not found", { status: 404 });
+      }
+
+      const outputId = decodeURIComponent(parsed.pathname.replace(/^\/+/, ""));
+      if (!outputId) {
+        return new Response("Missing output id", { status: 400 });
+      }
+
+      const output = requireQueueManager().getGeneratedAudio(outputId);
+      if (!output) {
+        return new Response("Generated audio not found", { status: 404 });
+      }
+
+      return net.fetch(pathToFileURL(output.file_path).toString());
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : "Unexpected protocol error";
+      return new Response(message, { status: 500 });
+    }
+  });
+}
+
 function wireQueueEvents(): void {
   const qm = requireQueueManager();
   qm.on("queueUpdated", (payload) => sendToRenderer(events.QUEUE_UPDATED, payload));
@@ -244,6 +293,7 @@ async function bootstrap(): Promise<void> {
 
 app.whenReady().then(async () => {
   await bootstrap();
+  registerCustomProtocols();
   createWindow();
   initUpdater();
 

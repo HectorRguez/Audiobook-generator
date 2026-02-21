@@ -21,6 +21,7 @@ declare global {
       cancelJob: (jobId: string) => Promise<JobDetail | null>;
       deleteJob: (jobId: string, deleteOutputs?: boolean) => Promise<QueueJob[]>;
       listGeneratedAudios: () => Promise<GeneratedAudio[]>;
+      getGeneratedPlaybackUrl: (outputId: string) => Promise<string>;
       downloadGeneratedAudio: (outputId: string) => Promise<{ canceled: boolean; filePath?: string }>;
       openOutputFolder: (jobId: string) => Promise<void>;
       getSettings: () => Promise<AppSettings>;

@@ -120,10 +120,12 @@ export function Dashboard() {
   const [jobs, setJobs] = useState<QueueJob[]>([]);
   const [jobDetails, setJobDetails] = useState<Record<string, JobDetail>>({});
   const [generated, setGenerated] = useState<GeneratedAudio[]>([]);
+  const [playbackUrls, setPlaybackUrls] = useState<Record<string, string>>({});
   const [bootstrapStatus, setBootstrapStatus] = useState<BootstrapStatus | null>(null);
   const [logs, setLogs] = useState<LogEvent[]>([]);
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const [isBusy, setIsBusy] = useState(false);
+  const [loadingPlaybackId, setLoadingPlaybackId] = useState<string | null>(null);
   const [bridgeReady, setBridgeReady] = useState(true);
 
   function getApi() {
@@ -297,6 +299,25 @@ export function Dashboard() {
     setDraggingId(null);
 
     await api.reorderQueue(next.map((job) => job.id));
+  }
+
+  async function loadPlaybackUrl(outputId: string) {
+    const api = getApi();
+    if (!api) {
+      setBridgeReady(false);
+      return;
+    }
+    if (playbackUrls[outputId]) {
+      return;
+    }
+
+    setLoadingPlaybackId(outputId);
+    try {
+      const url = await api.getGeneratedPlaybackUrl(outputId);
+      setPlaybackUrls((current) => ({ ...current, [outputId]: url }));
+    } finally {
+      setLoadingPlaybackId((current) => (current === outputId ? null : current));
+    }
   }
 
   return (
@@ -473,6 +494,19 @@ export function Dashboard() {
                       <p className="text-xs text-muted-foreground">
                         {formatDuration(output.duration_ms)} • {formatFileSize(output.size_bytes)} • {output.format.toUpperCase()}
                       </p>
+                      {playbackUrls[output.id] ? (
+                        <audio controls preload="none" className="mt-2 h-8 w-full" src={playbackUrls[output.id]} />
+                      ) : (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="mt-2"
+                          disabled={loadingPlaybackId === output.id}
+                          onClick={() => void loadPlaybackUrl(output.id)}
+                        >
+                          {loadingPlaybackId === output.id ? "Loading..." : "Test player"}
+                        </Button>
+                      )}
                     </div>
                     <div className="flex shrink-0 gap-1">
                       <Button size="sm" variant="secondary" onClick={() => void getApi()?.downloadGeneratedAudio(output.id)}>
