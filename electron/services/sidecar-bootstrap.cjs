@@ -33,6 +33,19 @@ async function downloadToFile(url, outputPath) {
   await pipeline(Readable.fromWeb(response.body), fs.createWriteStream(outputPath));
 }
 
+function fileNameFromUrl(url, fallbackName) {
+  try {
+    const parsed = new URL(url);
+    const base = decodeURIComponent(path.posix.basename(parsed.pathname || ""));
+    if (base) {
+      return base;
+    }
+  } catch {
+    // ignore
+  }
+  return fallbackName;
+}
+
 function extractWithTar(archivePath, extractTarget) {
   return new Promise((resolve, reject) => {
     const child = spawn("tar", ["-xf", archivePath, "-C", extractTarget], {
@@ -71,6 +84,21 @@ async function extractArchive(archivePath, extractTarget, archiveType) {
   }
 
   throw new Error(`Unsupported archiveType: ${archiveType}`);
+}
+
+function deriveVoiceConfigUrl(modelUrl) {
+  if (!modelUrl.includes(".onnx")) {
+    return null;
+  }
+
+  const match = modelUrl.match(/^(.*)\.onnx(\?.*)?$/);
+  if (!match) {
+    return null;
+  }
+
+  const prefix = match[1];
+  const query = match[2] || "";
+  return `${prefix}.onnx.json${query}`;
 }
 
 function resolvePaths(baseDir, pathsConfig) {
@@ -122,21 +150,37 @@ async function ensureRuntimeAssets(options) {
   await fsp.mkdir(downloadsDir, { recursive: true });
 
   for (const archive of platformConfig.archives) {
-    const archivePath = path.join(downloadsDir, `${archive.id}.archive`);
+    const archiveType = (archive.archiveType || "zip").toLowerCase();
     if (onStatus) {
       onStatus({ phase: "downloading", assetId: archive.id, message: `Downloading ${archive.id}` });
     }
 
-    await downloadToFile(archive.url, archivePath);
-
     const extractTarget = path.join(runtimeRoot, archive.extractTo);
     await fsp.mkdir(extractTarget, { recursive: true });
+    if (archiveType === "none") {
+      const fileName = fileNameFromUrl(archive.url, `${archive.id}.bin`);
+      const targetPath = path.join(extractTarget, fileName);
+      await downloadToFile(archive.url, targetPath);
+      continue;
+    }
+
+    const archivePath = path.join(downloadsDir, `${archive.id}.archive`);
+    await downloadToFile(archive.url, archivePath);
 
     if (onStatus) {
       onStatus({ phase: "extracting", assetId: archive.id, message: `Extracting ${archive.id}` });
     }
 
-    await extractArchive(archivePath, extractTarget, archive.archiveType);
+    await extractArchive(archivePath, extractTarget, archiveType);
+  }
+
+  if (paths.defaultVoiceConfig && !exists(paths.defaultVoiceConfig) && exists(paths.defaultVoiceModel)) {
+    const voiceArchive = platformConfig.archives.find((archive) => archive.id === "voice-default");
+    const configUrl = voiceArchive ? deriveVoiceConfigUrl(voiceArchive.url) : null;
+    if (configUrl) {
+      await fsp.mkdir(path.dirname(paths.defaultVoiceConfig), { recursive: true });
+      await downloadToFile(configUrl, paths.defaultVoiceConfig);
+    }
   }
 
   const requiredPaths = Object.values(paths).filter(Boolean);

@@ -26,7 +26,7 @@ for (const [platformKey, platformConfig] of Object.entries(manifest.platforms ||
       throw new Error(`Archive URL must be a direct file URL, not postdownload: ${archive.url}`);
     }
 
-    if (archive.archiveType && ![ "zip", "tar.gz", "tgz", "tar.xz", "tar" ].includes(archive.archiveType)) {
+    if (archive.archiveType && ![ "none", "zip", "tar.gz", "tgz", "tar.xz", "tar" ].includes(archive.archiveType)) {
       throw new Error(`Unsupported archiveType for ${platformKey}/${archive.id}: ${archive.archiveType}`);
     }
   }

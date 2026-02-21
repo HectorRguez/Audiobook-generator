@@ -5,20 +5,20 @@
       "archives": [
         {
           "id": "piper",
-          "url": "https://downloads.sourceforge.net/project/piper-tts.mirror/piper_windows_amd64.zip",
+          "url": "https://github.com/rhasspy/piper/releases/download/2023.11.14-2/piper_windows_amd64.zip",
           "archiveType": "zip",
           "extractTo": "piper"
         },
         {
           "id": "ffmpeg",
-          "url": "https://example.com/ffmpeg-windows-x64.zip",
+          "url": "https://github.com/BtbN/FFmpeg-Builds/releases/download/autobuild-2023-04-04-12-47/ffmpeg-n6.0-12-ga6dc92968a-win64-gpl-shared-6.0.zip",
           "archiveType": "zip",
           "extractTo": "ffmpeg"
         },
         {
           "id": "voice-default",
-          "url": "https://example.com/piper-voice-es_ES-davefx-medium.zip",
-          "archiveType": "zip",
+          "url": "https://huggingface.co/rhasspy/piper-voices/resolve/main/es/es_ES/davefx/medium/es_ES-davefx-medium.onnx?download=true",
+          "archiveType": "none",
           "extractTo": "voice-default"
         }
       ],
@@ -33,20 +33,20 @@
       "archives": [
         {
           "id": "piper",
-          "url": "https://downloads.sourceforge.net/project/piper-tts.mirror/piper_linux_x86_64.tar.gz",
+          "url": "https://downloads.sourceforge.net/project/piper-tts.mirror/2023.11.14-2/piper_linux_x86_64.tar.gz",
           "archiveType": "tar.gz",
           "extractTo": "piper"
         },
         {
           "id": "ffmpeg",
-          "url": "https://example.com/ffmpeg-linux-x64.tar.xz",
+          "url": "https://github.com/BtbN/FFmpeg-Builds/releases/download/autobuild-2023-04-04-12-47/ffmpeg-n6.0-12-ga6dc92968a-linux64-gpl-shared-6.0.tar.xz",
           "archiveType": "tar.xz",
           "extractTo": "ffmpeg"
         },
         {
           "id": "voice-default",
-          "url": "https://example.com/piper-voice-es_ES-davefx-medium.zip",
-          "archiveType": "zip",
+          "url": "https://huggingface.co/rhasspy/piper-voices/resolve/main/es/es_ES/davefx/medium/es_ES-davefx-medium.onnx?download=true",
+          "archiveType": "none",
           "extractTo": "voice-default"
         }
       ],
