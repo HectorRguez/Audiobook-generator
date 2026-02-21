@@ -1,85 +1,148 @@
-const fs = require("node:fs");
-const fsp = require("node:fs/promises");
-const path = require("node:path");
-const { EventEmitter } = require("node:events");
-const { extractEpub } = require("./epub-extractor.cjs");
-const { splitIntoChunks } = require("./text-utils.cjs");
-const { EtaEstimator } = require("./eta-estimator.cjs");
-const { killChild } = require("./process-utils.cjs");
-const {
+import fs from "node:fs";
+import fsp from "node:fs/promises";
+import path from "node:path";
+import { EventEmitter } from "node:events";
+import type { ChildProcessWithoutNullStreams } from "node:child_process";
+import { extractEpub } from "./epub-extractor";
+import { splitIntoChunks } from "./text-utils";
+import { EtaEstimator } from "./eta-estimator";
+import { killChild } from "./process-utils";
+import {
   runPiperChunk,
   concatWavs,
   encodeFinalAudio,
   getDurationMs,
   buildOutputPaths
-} = require("./audio-runner.cjs");
+} from "./audio-runner";
+import type {
+  AppSettings,
+  BootstrapStatus,
+  ChapterRow,
+  JobDetail,
+  JobRow,
+  OutputRow,
+  RuntimeAssets
+} from "../types";
+import { Repository } from "../db/repository";
+import type { EnsureRuntimeAssetsOptions } from "./sidecar-bootstrap";
 
 class PausedError extends Error {
+  readonly code = "JOB_PAUSED";
+
   constructor() {
     super("Paused by user");
-    this.code = "JOB_PAUSED";
   }
 }
 
 class CanceledError extends Error {
+  readonly code = "JOB_CANCELED";
+
   constructor() {
     super("Canceled by user");
-    this.code = "JOB_CANCELED";
   }
 }
 
-function isEpubPath(filePath) {
-  return typeof filePath === "string" && filePath.toLowerCase().endsWith(".epub");
+function isEpubPath(filePath: string): boolean {
+  return filePath.toLowerCase().endsWith(".epub");
 }
 
-class QueueManager extends EventEmitter {
-  constructor(options) {
+function asError(error: unknown): Error & { code?: string } {
+  if (error instanceof Error) {
+    return error as Error & { code?: string };
+  }
+  return new Error(String(error));
+}
+
+interface QueueManagerOptions {
+  repo: Repository;
+  appDataDir: string;
+  ensureRuntimeAssets: (options: EnsureRuntimeAssetsOptions) => Promise<RuntimeAssets>;
+}
+
+interface ChapterProcessContext {
+  workDir: string;
+  assets: RuntimeAssets;
+  etaEstimator: EtaEstimator;
+  totalChars: number;
+}
+
+export class QueueManager extends EventEmitter {
+  private readonly repo: Repository;
+  private readonly appDataDir: string;
+  private readonly ensureRuntimeAssetsFn: (options: EnsureRuntimeAssetsOptions) => Promise<RuntimeAssets>;
+
+  private isPumping = false;
+  private currentJobId: string | null = null;
+  private currentChild: ChildProcessWithoutNullStreams | null = null;
+  private readonly pauseRequested = new Set<string>();
+  private readonly cancelRequested = new Set<string>();
+
+  private runtimeAssets: RuntimeAssets | null = null;
+  private runtimeAssetsPromise: Promise<RuntimeAssets> | null = null;
+
+  constructor(options: QueueManagerOptions) {
     super();
     this.repo = options.repo;
     this.appDataDir = options.appDataDir;
-    this.ensureRuntimeAssets = options.ensureRuntimeAssets;
-
-    this.isPumping = false;
-    this.currentJobId = null;
-    this.currentChild = null;
-    this.pauseRequested = new Set();
-    this.cancelRequested = new Set();
-
-    this.runtimeAssets = null;
-    this.runtimeAssetsPromise = null;
+    this.ensureRuntimeAssetsFn = options.ensureRuntimeAssets;
   }
 
-  async initialize() {
+  private emitQueueUpdated(jobs: JobRow[]): void {
+    this.emit("queueUpdated", jobs);
+  }
+
+  private emitJobUpdated(job: JobDetail): void {
+    this.emit("jobUpdated", job);
+  }
+
+  private emitGeneratedUpdated(outputs: OutputRow[]): void {
+    this.emit("generatedUpdated", outputs);
+  }
+
+  private emitLog(jobId: string, level: string, message: string): void {
+    this.emit("logEvent", { jobId, level, message, ts: Date.now() });
+  }
+
+  private emitBootstrap(status: BootstrapStatus): void {
+    this.emit("bootstrapStatusUpdated", status);
+  }
+
+  private emitSettingsUpdated(settings: Partial<AppSettings>): void {
+    this.emit("settingsUpdated", settings);
+  }
+
+  async initialize(): Promise<void> {
     this.repo.recoverInterruptedWork();
     this.emitQueue();
     this.emitGeneratedAudios();
     void this.pump();
   }
 
-  async bootstrapAssets() {
+  async bootstrapAssets(): Promise<RuntimeAssets> {
     if (this.runtimeAssets) {
       return this.runtimeAssets;
     }
 
     if (!this.runtimeAssetsPromise) {
-      this.runtimeAssetsPromise = this.ensureRuntimeAssets({
+      this.runtimeAssetsPromise = this.ensureRuntimeAssetsFn({
         appDataDir: this.appDataDir,
-        onStatus: (status) => this.emit("bootstrapStatusUpdated", status)
+        onStatus: (status) => this.emitBootstrap(status)
       })
         .then((result) => {
           this.runtimeAssets = result;
-          this.emit("bootstrapStatusUpdated", {
+          this.emitBootstrap({
             phase: "ready",
             message: `Runtime assets ready (${result.source}).`
           });
           return result;
         })
-        .catch((error) => {
-          this.emit("bootstrapStatusUpdated", {
+        .catch((error: unknown) => {
+          const err = asError(error);
+          this.emitBootstrap({
             phase: "error",
-            message: error.message
+            message: err.message
           });
-          throw error;
+          throw err;
         })
         .finally(() => {
           this.runtimeAssetsPromise = null;
@@ -89,57 +152,57 @@ class QueueManager extends EventEmitter {
     return this.runtimeAssetsPromise;
   }
 
-  emitQueue() {
-    this.emit("queueUpdated", this.repo.listJobs());
+  private emitQueue(): void {
+    this.emitQueueUpdated(this.repo.listJobs());
   }
 
-  emitGeneratedAudios() {
-    this.emit("generatedUpdated", this.repo.listOutputs());
+  private emitGeneratedAudios(): void {
+    this.emitGeneratedUpdated(this.repo.listOutputs());
   }
 
-  emitJob(jobId) {
+  private emitJob(jobId: string): void {
     const detail = this.repo.getJobDetail(jobId);
     if (detail) {
-      this.emit("jobUpdated", detail);
+      this.emitJobUpdated(detail);
     }
   }
 
-  log(jobId, level, message) {
+  private log(jobId: string, level: string, message: string): void {
     this.repo.addLog(jobId, level, message);
-    this.emit("logEvent", { jobId, level, message, ts: Date.now() });
+    this.emitLog(jobId, level, message);
   }
 
-  getSettings() {
+  getSettings(): Partial<AppSettings> {
     return this.repo.getSettings();
   }
 
-  setSettings(patch) {
+  setSettings(patch: Partial<AppSettings>): Partial<AppSettings> {
     const settings = this.repo.setSettings(patch);
-    this.emit("settingsUpdated", settings);
+    this.emitSettingsUpdated(settings);
     return settings;
   }
 
-  listJobs() {
+  listJobs(): JobRow[] {
     return this.repo.listJobs();
   }
 
-  listGeneratedAudios() {
+  listGeneratedAudios(): OutputRow[] {
     return this.repo.listOutputs();
   }
 
-  getGeneratedAudio(outputId) {
+  getGeneratedAudio(outputId: string): OutputRow | null {
     return this.repo.getOutput(outputId);
   }
 
-  getGeneratedAudiosByJob(jobId) {
+  getGeneratedAudiosByJob(jobId: string): OutputRow[] {
     return this.repo.getOutputsByJob(jobId);
   }
 
-  getJob(jobId) {
+  getJob(jobId: string): JobDetail | null {
     return this.repo.getJobDetail(jobId);
   }
 
-  async enqueueEpubFiles(filePaths) {
+  async enqueueEpubFiles(filePaths: string[]): Promise<JobRow[]> {
     const validPaths = filePaths.filter(isEpubPath);
     if (validPaths.length === 0) {
       throw new Error("Only .epub files are supported.");
@@ -149,7 +212,7 @@ class QueueManager extends EventEmitter {
     const rows = this.repo.enqueueEpubFiles(validPaths, {
       voiceId: settings.defaultVoiceId || "es_ES-davefx-medium",
       outputFormat: settings.defaultOutputFormat || "mp3",
-      outputDir: settings.defaultOutputDir,
+      outputDir: settings.defaultOutputDir || path.join(this.appDataDir, "outputs"),
       jobSettings: {
         keepIntermediates: Boolean(settings.keepIntermediates)
       }
@@ -160,12 +223,12 @@ class QueueManager extends EventEmitter {
     return rows;
   }
 
-  reorderQueue(jobIdsInOrder) {
+  reorderQueue(jobIdsInOrder: string[]): void {
     this.repo.reorderQueue(jobIdsInOrder);
     this.emitQueue();
   }
 
-  pauseJob(jobId) {
+  pauseJob(jobId: string): void {
     const job = this.repo.getJob(jobId);
     if (!job) {
       return;
@@ -184,7 +247,7 @@ class QueueManager extends EventEmitter {
     }
   }
 
-  resumeJob(jobId) {
+  resumeJob(jobId: string): void {
     const job = this.repo.getJob(jobId);
     if (!job) {
       return;
@@ -210,7 +273,7 @@ class QueueManager extends EventEmitter {
     void this.pump();
   }
 
-  cancelJob(jobId) {
+  cancelJob(jobId: string): void {
     const job = this.repo.getJob(jobId);
     if (!job) {
       return;
@@ -230,7 +293,7 @@ class QueueManager extends EventEmitter {
     }
   }
 
-  deleteJob(jobId) {
+  deleteJob(jobId: string): void {
     if (this.currentJobId === jobId) {
       throw new Error("Cannot delete an actively processing job.");
     }
@@ -240,7 +303,7 @@ class QueueManager extends EventEmitter {
     this.emitGeneratedAudios();
   }
 
-  checkControlFlags(jobId) {
+  private checkControlFlags(jobId: string): void {
     if (this.cancelRequested.has(jobId)) {
       throw new CanceledError();
     }
@@ -249,7 +312,7 @@ class QueueManager extends EventEmitter {
     }
   }
 
-  async ensureJobChapters(job, workDir) {
+  private async ensureJobChapters(job: JobRow, workDir: string): Promise<ChapterRow[]> {
     const existingChapters = this.repo.listChapters(job.id);
     if (existingChapters.length > 0) {
       return existingChapters;
@@ -278,7 +341,7 @@ class QueueManager extends EventEmitter {
     return this.repo.listChapters(job.id);
   }
 
-  async ensureTotalChars(jobId, chapters, fallback) {
+  private async ensureTotalChars(jobId: string, chapters: ChapterRow[], fallback: number): Promise<number> {
     if (fallback > 0) {
       return fallback;
     }
@@ -292,7 +355,7 @@ class QueueManager extends EventEmitter {
     return totalChars;
   }
 
-  async processChapter(job, chapter, context) {
+  private async processChapter(job: JobRow, chapter: ChapterRow, context: ChapterProcessContext): Promise<void> {
     const { workDir, assets, etaEstimator, totalChars } = context;
     const text = await fsp.readFile(chapter.text_path, "utf8");
     const chunks = splitIntoChunks(text);
@@ -319,12 +382,15 @@ class QueueManager extends EventEmitter {
     });
 
     const resumeCursor = Math.min(chapter.chunk_cursor, chunks.length);
-    let processedChars = this.repo.getJob(job.id).processed_chars;
+    let processedChars = this.repo.getJob(job.id)?.processed_chars ?? 0;
 
     for (let chunkIdx = resumeCursor; chunkIdx < chunks.length; chunkIdx += 1) {
       this.checkControlFlags(job.id);
 
       const chunkText = chunks[chunkIdx];
+      if (!chunkText) {
+        continue;
+      }
       const chunkPath = path.join(chapterAudioDir, `chunk_${String(chunkIdx).padStart(5, "0")}.wav`);
       const started = Date.now();
 
@@ -367,7 +433,7 @@ class QueueManager extends EventEmitter {
       this.emitJob(job.id);
     }
 
-    const chunkFiles = [];
+    const chunkFiles: string[] = [];
     for (let i = 0; i < chunks.length; i += 1) {
       chunkFiles.push(path.join(chapterAudioDir, `chunk_${String(i).padStart(5, "0")}.wav`));
     }
@@ -399,12 +465,12 @@ class QueueManager extends EventEmitter {
     this.emitJob(job.id);
   }
 
-  async finalizeJob(job, workDir, assets) {
+  private async finalizeJob(job: JobRow, workDir: string, assets: RuntimeAssets): Promise<void> {
     const chapters = this.repo.listChapters(job.id);
     const chapterWavs = chapters
-      .filter((chapter) => chapter.status === "encoded" && chapter.audio_path)
+      .filter((chapter) => chapter.status === "encoded" && Boolean(chapter.audio_path))
       .sort((a, b) => a.idx - b.idx)
-      .map((chapter) => chapter.audio_path);
+      .map((chapter) => chapter.audio_path as string);
 
     if (chapterWavs.length === 0) {
       throw new Error("No chapter audio generated.");
@@ -476,7 +542,7 @@ class QueueManager extends EventEmitter {
     }
   }
 
-  async processJob(job) {
+  private async processJob(job: JobRow): Promise<void> {
     this.currentJobId = job.id;
     this.currentChild = null;
 
@@ -491,8 +557,8 @@ class QueueManager extends EventEmitter {
     const etaEstimator = new EtaEstimator();
 
     const latestJob = this.repo.getJob(job.id);
-    if (latestJob.processed_chars > 0 && totalChars > 0) {
-      etaEstimator.addSample(latestJob.processed_chars, Math.max(1, (Date.now() - latestJob.created_at)));
+    if (latestJob && latestJob.processed_chars > 0 && totalChars > 0) {
+      etaEstimator.addSample(latestJob.processed_chars, Math.max(1, Date.now() - latestJob.created_at));
     }
 
     for (const chapter of this.repo.listChapters(job.id)) {
@@ -513,7 +579,7 @@ class QueueManager extends EventEmitter {
     await this.finalizeJob(job, workDir, assets);
   }
 
-  async pump() {
+  async pump(): Promise<void> {
     if (this.isPumping) {
       return;
     }
@@ -528,16 +594,17 @@ class QueueManager extends EventEmitter {
 
       try {
         await this.processJob(nextJob);
-      } catch (error) {
-        if (error instanceof PausedError || error.code === "JOB_PAUSED") {
+      } catch (error: unknown) {
+        const err = asError(error);
+        if (err instanceof PausedError || err.code === "JOB_PAUSED") {
           this.repo.setJobPaused(nextJob.id);
           this.log(nextJob.id, "info", "Job paused.");
-        } else if (error instanceof CanceledError || error.code === "JOB_CANCELED") {
+        } else if (err instanceof CanceledError || err.code === "JOB_CANCELED") {
           this.repo.setJobCanceled(nextJob.id);
           this.log(nextJob.id, "info", "Job canceled.");
         } else {
-          this.repo.setJobError(nextJob.id, error.message || "Unexpected error");
-          this.log(nextJob.id, "error", error.stack || error.message || String(error));
+          this.repo.setJobError(nextJob.id, err.message || "Unexpected error");
+          this.log(nextJob.id, "error", err.stack || err.message || String(err));
         }
 
         this.emitQueue();
@@ -553,7 +620,3 @@ class QueueManager extends EventEmitter {
     this.isPumping = false;
   }
 }
-
-module.exports = {
-  QueueManager
-};

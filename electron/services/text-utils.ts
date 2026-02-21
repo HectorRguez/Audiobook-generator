@@ -1,4 +1,4 @@
-function normalizeText(input) {
+export function normalizeText(input: string): string {
   if (!input) {
     return "";
   }
@@ -13,7 +13,12 @@ function normalizeText(input) {
     .trim();
 }
 
-function splitIntoChunks(text, options = {}) {
+export interface ChunkOptions {
+  minChars?: number;
+  maxChars?: number;
+}
+
+export function splitIntoChunks(text: string, options: ChunkOptions = {}): string[] {
   const minChars = options.minChars ?? 800;
   const maxChars = options.maxChars ?? 2000;
 
@@ -23,7 +28,7 @@ function splitIntoChunks(text, options = {}) {
   }
 
   const sentences = normalized.split(/(?<=[.!?])\s+(?=[A-Z0-9"'])/g);
-  const chunks = [];
+  const chunks: string[] = [];
   let current = "";
 
   for (const sentence of sentences) {
@@ -61,8 +66,3 @@ function splitIntoChunks(text, options = {}) {
 
   return chunks;
 }
-
-module.exports = {
-  normalizeText,
-  splitIntoChunks
-};

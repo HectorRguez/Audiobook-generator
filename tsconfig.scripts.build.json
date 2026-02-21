@@ -1,0 +1,9 @@
+{
+  "extends": "./tsconfig.scripts.json",
+  "compilerOptions": {
+    "noEmit": false,
+    "outDir": "dist-scripts",
+    "rootDir": "."
+  },
+  "include": ["scripts/**/*.ts", "electron/types.ts"]
+}

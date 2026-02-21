@@ -1,10 +1,10 @@
-const net = require("node:net");
-const { spawn } = require("node:child_process");
+import net from "node:net";
+import { spawn, type ChildProcess } from "node:child_process";
 
 const NEXT_BIN = require.resolve("next/dist/bin/next");
-const ELECTRON_BIN = require("electron");
+const ELECTRON_BIN = require("electron") as string;
 
-async function canBind(port) {
+async function canBind(port: number): Promise<boolean> {
   return new Promise((resolve) => {
     const server = net.createServer();
 
@@ -17,7 +17,7 @@ async function canBind(port) {
   });
 }
 
-async function findFreePort(start = 3000, attempts = 200) {
+async function findFreePort(start = 3000, attempts = 200): Promise<number> {
   for (let offset = 0; offset < attempts; offset += 1) {
     const candidate = start + offset;
     // eslint-disable-next-line no-await-in-loop
@@ -30,7 +30,7 @@ async function findFreePort(start = 3000, attempts = 200) {
   return new Promise((resolve, reject) => {
     const server = net.createServer();
 
-    server.once("error", (error) => {
+    server.once("error", (error: Error) => {
       reject(new Error(`No free port found in range ${start}-${start + attempts - 1}: ${error.message}`));
     });
 
@@ -49,15 +49,15 @@ async function findFreePort(start = 3000, attempts = 200) {
   });
 }
 
-async function waitForTcp(port, timeoutMs = 30000) {
+async function waitForTcp(port: number, timeoutMs = 30000): Promise<void> {
   const deadline = Date.now() + timeoutMs;
 
   while (Date.now() < deadline) {
     // eslint-disable-next-line no-await-in-loop
-    const open = await new Promise((resolve) => {
+    const open = await new Promise<boolean>((resolve) => {
       const socket = new net.Socket();
 
-      const finish = (value) => {
+      const finish = (value: boolean) => {
         socket.removeAllListeners();
         socket.destroy();
         resolve(value);
@@ -81,7 +81,7 @@ async function waitForTcp(port, timeoutMs = 30000) {
   throw new Error(`Timed out waiting for renderer on port ${port}`);
 }
 
-function spawnChild(command, args, options = {}) {
+function spawnChild(command: string, args: string[], options: { env?: NodeJS.ProcessEnv; cwd?: string } = {}): ChildProcess {
   return spawn(command, args, {
     stdio: "inherit",
     env: { ...process.env, ...(options.env || {}) },
@@ -90,7 +90,7 @@ function spawnChild(command, args, options = {}) {
   });
 }
 
-async function main() {
+async function main(): Promise<void> {
   const port = await findFreePort(3000, 300);
   const url = `http://127.0.0.1:${port}`;
 
@@ -99,10 +99,10 @@ async function main() {
   const renderer = spawnChild(process.execPath, [NEXT_BIN, "dev", "-H", "127.0.0.1", "-p", String(port)], {
     cwd: "./renderer"
   });
-  let electron = null;
+  let electron: ChildProcess | null = null;
   let shuttingDown = false;
 
-  const shutdown = (exitCode = 0) => {
+  const shutdown = (exitCode = 0): void => {
     if (shuttingDown) {
       return;
     }
@@ -111,7 +111,7 @@ async function main() {
     if (electron && !electron.killed) {
       electron.kill("SIGTERM");
     }
-    if (renderer && !renderer.killed) {
+    if (!renderer.killed) {
       renderer.kill("SIGTERM");
     }
 
@@ -141,7 +141,8 @@ async function main() {
   });
 }
 
-main().catch((error) => {
-  console.error("[dev-desktop]", error.message);
+void main().catch((error: unknown) => {
+  const message = error instanceof Error ? error.message : String(error);
+  console.error("[dev-desktop]", message);
   process.exit(1);
 });

@@ -1,8 +1,9 @@
-const fs = require("node:fs");
-const path = require("node:path");
+import fs from "node:fs";
+import path from "node:path";
+import type { SidecarManifest } from "../electron/types";
 
 const manifestPath = path.join(__dirname, "..", "electron", "assets", "sidecar-manifest.json");
-const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
+const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8")) as SidecarManifest;
 
 if (!manifest.version || typeof manifest.version !== "string") {
   throw new Error("Manifest version is required.");
@@ -26,7 +27,7 @@ for (const [platformKey, platformConfig] of Object.entries(manifest.platforms ||
       throw new Error(`Archive URL must be a direct file URL, not postdownload: ${archive.url}`);
     }
 
-    if (archive.archiveType && ![ "none", "zip", "tar.gz", "tgz", "tar.xz", "tar" ].includes(archive.archiveType)) {
+    if (archive.archiveType && !["none", "zip", "tar.gz", "tgz", "tar.xz", "tar"].includes(archive.archiveType)) {
       throw new Error(`Unsupported archiveType for ${platformKey}/${archive.id}: ${archive.archiveType}`);
     }
   }

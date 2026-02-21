@@ -4,7 +4,7 @@ asar: false
 directories:
   output: dist
 files:
-  - electron/**/*
+  - dist-electron/**/*
   - renderer/out/**/*
   - renderer/public/**/*
   - package.json

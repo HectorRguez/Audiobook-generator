@@ -67,6 +67,11 @@ export interface BootstrapStatus {
   phase: "downloading" | "extracting" | "ready" | "error";
   message: string;
   assetId?: string;
+  itemIndex?: number;
+  totalItems?: number;
+  progress?: number | null;
+  downloadedBytes?: number;
+  totalBytes?: number | null;
 }
 
 export interface AppSettings {

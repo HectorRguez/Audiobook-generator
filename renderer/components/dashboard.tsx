@@ -3,7 +3,9 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import prettyMilliseconds from "pretty-ms";
 import {
+  Clock3,
   Download,
+  FileAudio2,
   FolderOpen,
   GripVertical,
   Pause,
@@ -68,6 +70,36 @@ function formatFileSize(bytes: number) {
   return `${value.toFixed(1)} ${unit}`;
 }
 
+function formatBootstrapAssetName(assetId?: string) {
+  if (!assetId) {
+    return "Runtime asset";
+  }
+
+  if (assetId === "piper") {
+    return "Piper engine";
+  }
+  if (assetId === "ffmpeg") {
+    return "FFmpeg";
+  }
+  if (assetId === "voice-default") {
+    return "Spanish voice (davefx medium)";
+  }
+  return assetId;
+}
+
+function formatBootstrapPhase(phase: BootstrapStatus["phase"]) {
+  if (phase === "downloading") {
+    return "Downloading";
+  }
+  if (phase === "extracting") {
+    return "Extracting";
+  }
+  if (phase === "ready") {
+    return "Ready";
+  }
+  return "Error";
+}
+
 function reorder(list: QueueJob[], fromId: string, toId: string) {
   const fromIndex = list.findIndex((item) => item.id === fromId);
   const toIndex = list.findIndex((item) => item.id === toId);
@@ -77,6 +109,9 @@ function reorder(list: QueueJob[], fromId: string, toId: string) {
 
   const next = [...list];
   const [moved] = next.splice(fromIndex, 1);
+  if (!moved) {
+    return list;
+  }
   next.splice(toIndex, 0, moved);
   return next;
 }
@@ -112,38 +147,64 @@ export function Dashboard() {
   }, []);
 
   useEffect(() => {
-    const api = getApi();
-    if (!api) {
+    let attached = false;
+    let pollTimer: ReturnType<typeof setInterval> | null = null;
+    let unsubs: Array<() => void> = [];
+
+    const attachApi = (api: NonNullable<ReturnType<typeof getApi>>) => {
+      if (attached) {
+        return;
+      }
+      attached = true;
+      setBridgeReady(true);
+      void refresh();
+
+      unsubs = [
+        api.onQueueUpdated((payload) => setJobs(payload)),
+        api.onGeneratedUpdated((payload) => setGenerated(payload)),
+        api.onJobUpdated((payload) => {
+          setJobDetails((current) => ({ ...current, [payload.id]: payload }));
+        }),
+        api.onBootstrapStatus((payload) => setBootstrapStatus(payload)),
+        api.onLogEvent((payload) => {
+          setLogs((current) => [...current.slice(-200), payload]);
+        })
+      ];
+
+      void api.bootstrapAssets().catch((error: unknown) => {
+        setBootstrapStatus({
+          phase: "error",
+          message: error instanceof Error ? error.message : "Failed to bootstrap runtime assets"
+        });
+      });
+    };
+
+    const currentApi = getApi();
+    if (currentApi) {
+      attachApi(currentApi);
+    } else {
       setBridgeReady(false);
       setBootstrapStatus({
         phase: "error",
-        message: "Electron bridge not available. Start with `npm run dev`."
+        message: "Electron bridge unavailable in this view. Use the Electron app window started by `npm run dev`."
       });
-      return;
+      pollTimer = setInterval(() => {
+        const api = getApi();
+        if (!api) {
+          return;
+        }
+        if (pollTimer) {
+          clearInterval(pollTimer);
+          pollTimer = null;
+        }
+        attachApi(api);
+      }, 400);
     }
 
-    void refresh();
-
-    const unsubs = [
-      api.onQueueUpdated((payload) => setJobs(payload)),
-      api.onGeneratedUpdated((payload) => setGenerated(payload)),
-      api.onJobUpdated((payload) => {
-        setJobDetails((current) => ({ ...current, [payload.id]: payload }));
-      }),
-      api.onBootstrapStatus((payload) => setBootstrapStatus(payload)),
-      api.onLogEvent((payload) => {
-        setLogs((current) => [...current.slice(-200), payload]);
-      })
-    ];
-
-    void api.bootstrapAssets().catch((error: unknown) => {
-      setBootstrapStatus({
-        phase: "error",
-        message: error instanceof Error ? error.message : "Failed to bootstrap runtime assets"
-      });
-    });
-
     return () => {
+      if (pollTimer) {
+        clearInterval(pollTimer);
+      }
       unsubs.forEach((unsubscribe) => unsubscribe());
     };
   }, [refresh]);
@@ -167,6 +228,14 @@ export function Dashboard() {
     }
     return [...logs].reverse().find((entry) => entry.jobId === activeJob.id) || null;
   }, [activeJob, logs]);
+  const activeJobDetail = activeJob ? jobDetails[activeJob.id] : undefined;
+
+  const bootstrapDownloadVisible = Boolean(
+    bootstrapStatus && (bootstrapStatus.phase === "downloading" || bootstrapStatus.phase === "extracting")
+  );
+  const bootstrapProgressValue = bootstrapStatus?.progress === null || bootstrapStatus?.progress === undefined
+    ? (bootstrapStatus?.phase === "extracting" ? 100 : 10)
+    : Math.round(bootstrapStatus.progress * 100);
 
   async function addFiles() {
     const api = getApi();
@@ -233,14 +302,14 @@ export function Dashboard() {
   return (
     <main className="h-screen w-full p-4 lg:p-6">
       <div className="mx-auto flex h-full max-w-[1800px] flex-col gap-4">
-        <header className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border/70 bg-card/70 px-4 py-3 backdrop-blur">
+        <header className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border bg-card px-6 py-4">
           <div>
             <h1 className="text-xl font-semibold">Audiobook Generator</h1>
             <p className="text-sm text-muted-foreground">EPUB queue with durable state and chapter-level checkpoints.</p>
           </div>
           <div className="flex items-center gap-2">
             {!bridgeReady && <Badge variant="destructive">Desktop bridge unavailable</Badge>}
-            {bootstrapStatus && (
+            {bootstrapStatus && !bootstrapDownloadVisible && (
               <Badge variant={bootstrapStatus.phase === "error" ? "destructive" : "secondary"}>
                 {bootstrapStatus.phase}: {bootstrapStatus.message}
               </Badge>
@@ -329,35 +398,51 @@ export function Dashboard() {
                 <p className="text-sm text-muted-foreground">No active processing job.</p>
               ) : (
                 <>
-                  <div>
-                    <p className="text-sm font-medium">{activeJob.title}</p>
-                    <p className="text-xs text-muted-foreground">Status: {activeJob.status}</p>
-                  </div>
+                  <div className="rounded-xl border border-border/70 bg-background/40 p-4">
+                    <div className="flex flex-col items-center gap-3 text-center">
+                      <div className="relative rounded-2xl border border-border/70 bg-background/80 p-6">
+                        <FileAudio2 className="h-14 w-14 text-primary" />
+                        <Badge variant={statusVariant(activeJob.status)} className="absolute -right-3 -top-3">
+                          {activeJob.status}
+                        </Badge>
+                      </div>
+                      <p className="line-clamp-2 text-sm font-semibold">{activeJob.title}</p>
+                      <p className="line-clamp-1 text-xs text-muted-foreground">{activeJob.source_name}</p>
+                    </div>
 
-                  <Progress value={Math.round((activeJob.progress || 0) * 100)} />
+                    <div className="mt-4 space-y-2">
+                      <Progress value={Math.round((activeJob.progress || 0) * 100)} />
+                      <div className="flex items-center justify-between text-xs text-muted-foreground">
+                        <span>{Math.round((activeJob.progress || 0) * 100)}%</span>
+                        <span className="inline-flex items-center gap-1">
+                          <Clock3 className="h-3.5 w-3.5" />
+                          {formatEta(activeJob.eta_seconds)}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
 
                   <div className="grid grid-cols-2 gap-3 text-sm">
                     <div className="rounded-lg border border-border/70 bg-background/40 p-3">
-                      <p className="text-xs uppercase tracking-wide text-muted-foreground">Progress</p>
-                      <p className="text-base font-semibold">{Math.round((activeJob.progress || 0) * 100)}%</p>
+                      <p className="text-xs uppercase tracking-wide text-muted-foreground">Chapter</p>
+                      <p className="text-base font-semibold">#{activeJob.current_chapter_idx + 1}</p>
                     </div>
                     <div className="rounded-lg border border-border/70 bg-background/40 p-3">
-                      <p className="text-xs uppercase tracking-wide text-muted-foreground">ETA</p>
-                      <p className="text-base font-semibold">{formatEta(activeJob.eta_seconds)}</p>
+                      <p className="text-xs uppercase tracking-wide text-muted-foreground">Characters</p>
+                      <p className="text-base font-semibold">{activeJob.processed_chars.toLocaleString()}</p>
                     </div>
                   </div>
 
                   <div className="rounded-lg border border-border/70 bg-background/40 p-3 text-xs text-muted-foreground">
-                    <p>Chapter #{activeJob.current_chapter_idx + 1}</p>
                     <p>
                       {activeJob.processed_chars.toLocaleString()} / {activeJob.total_chars.toLocaleString()} chars
                     </p>
                     {activeLog && <p className="mt-1">Latest: {activeLog.message}</p>}
                   </div>
 
-                  {jobDetails[activeJob.id]?.chapters && (
+                  {activeJobDetail?.chapters && (
                     <div className="max-h-56 space-y-1 overflow-y-auto rounded-lg border border-border/70 bg-background/40 p-2">
-                      {jobDetails[activeJob.id].chapters.map((chapter) => (
+                      {activeJobDetail.chapters.map((chapter) => (
                         <div key={chapter.id} className="flex items-center justify-between rounded-md px-2 py-1 text-xs">
                           <span className="truncate">{chapter.title}</span>
                           <span className="text-muted-foreground">
@@ -404,6 +489,31 @@ export function Dashboard() {
           </Card>
         </section>
       </div>
+      {bootstrapDownloadVisible && bootstrapStatus && (
+        <div className="pointer-events-none fixed bottom-5 right-5 z-50 w-[360px]">
+          <Card className="border-border/80 bg-card/95 shadow-xl backdrop-blur">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm">
+                Runtime Assets {bootstrapStatus.itemIndex ?? 0}/{bootstrapStatus.totalItems ?? 0}
+              </CardTitle>
+              <CardDescription className="line-clamp-1">
+                {formatBootstrapPhase(bootstrapStatus.phase)} {formatBootstrapAssetName(bootstrapStatus.assetId)}
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-2">
+              <Progress value={bootstrapProgressValue} />
+              <div className="flex items-center justify-between text-xs text-muted-foreground">
+                <span>{bootstrapProgressValue}%</span>
+                <span>
+                  {typeof bootstrapStatus.downloadedBytes === "number" ? formatFileSize(bootstrapStatus.downloadedBytes) : "0 B"}
+                  {" / "}
+                  {typeof bootstrapStatus.totalBytes === "number" ? formatFileSize(bootstrapStatus.totalBytes) : "Unknown"}
+                </span>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      )}
     </main>
   );
 }

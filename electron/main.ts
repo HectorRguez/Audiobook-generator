@@ -1,0 +1,272 @@
+import path from "node:path";
+import fs from "node:fs/promises";
+import { pathToFileURL } from "node:url";
+import {
+  app,
+  BrowserWindow,
+  dialog,
+  ipcMain,
+  shell
+} from "electron";
+import { autoUpdater } from "electron-updater";
+import { Repository } from "./db/repository";
+import { QueueManager } from "./services/queue-manager";
+import { ensureRuntimeAssets } from "./services/sidecar-bootstrap";
+import { commands, events } from "./ipc/channels";
+import type { AppSettings, VoiceInfo } from "./types";
+
+let mainWindow: BrowserWindow | null = null;
+let repo: Repository | null = null;
+let queueManager: QueueManager | null = null;
+
+const DEV_URL = process.env.ELECTRON_START_URL || "http://127.0.0.1:3000";
+
+function rendererIndexPath(): string {
+  return path.join(app.getAppPath(), "renderer", "out", "index.html");
+}
+
+async function loadRenderer(window: BrowserWindow): Promise<void> {
+  if (!app.isPackaged) {
+    await window.loadURL(DEV_URL);
+    return;
+  }
+
+  const indexPath = rendererIndexPath();
+  await window.loadURL(pathToFileURL(indexPath).toString());
+}
+
+function createWindow(): void {
+  mainWindow = new BrowserWindow({
+    width: 1680,
+    height: 980,
+    minWidth: 1280,
+    minHeight: 760,
+    backgroundColor: "#0f172a",
+    webPreferences: {
+      preload: path.join(__dirname, "preload.js"),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: false
+    }
+  });
+
+  mainWindow.webContents.on("preload-error", (_event, preloadPath, error) => {
+    console.error(`Preload error at ${preloadPath}:`, error);
+  });
+  mainWindow.webContents.on("did-fail-load", (_event, errorCode, errorDescription) => {
+    console.error(`Renderer failed to load (${errorCode}): ${errorDescription}`);
+  });
+
+  void loadRenderer(mainWindow);
+  mainWindow.on("closed", () => {
+    mainWindow = null;
+  });
+}
+
+function sendToRenderer(channel: string, payload: unknown): void {
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    return;
+  }
+  mainWindow.webContents.send(channel, payload);
+}
+
+function initUpdater(): void {
+  if (!app.isPackaged || process.platform !== "win32") {
+    return;
+  }
+
+  autoUpdater.autoDownload = true;
+  autoUpdater.autoInstallOnAppQuit = true;
+  autoUpdater.allowPrerelease = false;
+
+  autoUpdater.on("error", (error) => {
+    console.error("Auto-updater error", error);
+  });
+
+  autoUpdater.on("update-available", (info) => {
+    console.info(`Update available: ${info.version}`);
+  });
+
+  autoUpdater.on("update-downloaded", (info) => {
+    console.info(`Update downloaded: ${info.version}`);
+    setTimeout(() => autoUpdater.quitAndInstall(false, true), 500);
+  });
+
+  void autoUpdater.checkForUpdates().catch((error: unknown) => {
+    console.error("Failed to check for updates", error);
+  });
+}
+
+function requireQueueManager(): QueueManager {
+  if (!queueManager) {
+    throw new Error("Queue manager is not initialized.");
+  }
+  return queueManager;
+}
+
+function registerIpcHandlers(): void {
+  ipcMain.handle(commands.PICK_EPUB_FILES, async () => {
+    const result = await dialog.showOpenDialog({
+      properties: ["openFile", "multiSelections"],
+      filters: [{ name: "EPUB files", extensions: ["epub"] }]
+    });
+
+    if (result.canceled) {
+      return [] as string[];
+    }
+
+    return result.filePaths;
+  });
+
+  ipcMain.handle(commands.ENQUEUE_EPUB_FILES, async (_event, filePaths: unknown) => {
+    const qm = requireQueueManager();
+    return qm.enqueueEpubFiles(Array.isArray(filePaths) ? (filePaths as string[]) : []);
+  });
+
+  ipcMain.handle(commands.LIST_JOBS, async () => requireQueueManager().listJobs());
+  ipcMain.handle(commands.GET_JOB, async (_event, jobId: string) => requireQueueManager().getJob(jobId));
+
+  ipcMain.handle(commands.REORDER_QUEUE, async (_event, jobIdsInOrder: unknown) => {
+    const qm = requireQueueManager();
+    qm.reorderQueue(Array.isArray(jobIdsInOrder) ? (jobIdsInOrder as string[]) : []);
+    return qm.listJobs();
+  });
+
+  ipcMain.handle(commands.PAUSE_JOB, async (_event, jobId: string) => {
+    const qm = requireQueueManager();
+    qm.pauseJob(jobId);
+    return qm.getJob(jobId);
+  });
+
+  ipcMain.handle(commands.RESUME_JOB, async (_event, jobId: string) => {
+    const qm = requireQueueManager();
+    qm.resumeJob(jobId);
+    return qm.getJob(jobId);
+  });
+
+  ipcMain.handle(commands.CANCEL_JOB, async (_event, jobId: string) => {
+    const qm = requireQueueManager();
+    qm.cancelJob(jobId);
+    return qm.getJob(jobId);
+  });
+
+  ipcMain.handle(commands.DELETE_JOB, async (_event, jobId: string, deleteOutputs: boolean) => {
+    const qm = requireQueueManager();
+    if (deleteOutputs) {
+      const outputs = qm.getGeneratedAudiosByJob(jobId);
+      await Promise.all(outputs.map((output) => fs.rm(output.file_path, { force: true }).catch(() => {})));
+    }
+    qm.deleteJob(jobId);
+    return qm.listJobs();
+  });
+
+  ipcMain.handle(commands.LIST_GENERATED, async () => requireQueueManager().listGeneratedAudios());
+
+  ipcMain.handle(commands.DOWNLOAD_GENERATED, async (_event, outputId: string) => {
+    const qm = requireQueueManager();
+    const output = qm.getGeneratedAudio(outputId);
+    if (!output) {
+      throw new Error("Generated audio not found.");
+    }
+
+    const result = await dialog.showSaveDialog({
+      title: "Export audiobook",
+      defaultPath: path.basename(output.file_path)
+    });
+
+    if (result.canceled || !result.filePath) {
+      return { canceled: true as const };
+    }
+
+    await fs.copyFile(output.file_path, result.filePath);
+    return { canceled: false as const, filePath: result.filePath };
+  });
+
+  ipcMain.handle(commands.OPEN_OUTPUT_FOLDER, async (_event, jobId: string) => {
+    const qm = requireQueueManager();
+    const job = qm.getJob(jobId);
+    if (!job) {
+      return;
+    }
+    await shell.openPath(job.output_dir);
+  });
+
+  ipcMain.handle(commands.GET_SETTINGS, async () => requireQueueManager().getSettings());
+  ipcMain.handle(commands.SET_SETTINGS, async (_event, patch: Partial<AppSettings>) => requireQueueManager().setSettings(patch || {}));
+
+  ipcMain.handle(commands.LIST_VOICES, async (): Promise<VoiceInfo[]> => {
+    return [
+      {
+        id: "es_ES-davefx-medium",
+        name: "Español (es_ES-davefx-medium)",
+        modelPath: process.env.PIPER_VOICE_MODEL || null
+      }
+    ];
+  });
+
+  ipcMain.handle(commands.BOOTSTRAP_ASSETS, async () => requireQueueManager().bootstrapAssets());
+}
+
+function wireQueueEvents(): void {
+  const qm = requireQueueManager();
+  qm.on("queueUpdated", (payload) => sendToRenderer(events.QUEUE_UPDATED, payload));
+  qm.on("jobUpdated", (payload) => sendToRenderer(events.JOB_UPDATED, payload));
+  qm.on("generatedUpdated", (payload) => sendToRenderer(events.GENERATED_UPDATED, payload));
+  qm.on("logEvent", (payload) => sendToRenderer(events.LOG_EVENT, payload));
+  qm.on("bootstrapStatusUpdated", (payload) => sendToRenderer(events.BOOTSTRAP_STATUS, payload));
+}
+
+async function bootstrap(): Promise<void> {
+  const userData = app.getPath("userData");
+  const dbPath = path.join(userData, "db", "app.sqlite");
+
+  repo = new Repository(dbPath);
+
+  const defaultOutputDir = path.join(app.getPath("documents"), "Audiobooks");
+  repo.ensureDefaults({
+    defaultOutputDir,
+    defaultVoiceId: "es_ES-davefx-medium",
+    defaultOutputFormat: "mp3",
+    keepIntermediates: false,
+    maxConcurrentJobs: 1
+  });
+
+  queueManager = new QueueManager({
+    repo,
+    appDataDir: userData,
+    ensureRuntimeAssets
+  });
+
+  wireQueueEvents();
+  registerIpcHandlers();
+  await queueManager.initialize();
+}
+
+app.whenReady().then(async () => {
+  await bootstrap();
+  createWindow();
+  initUpdater();
+
+  app.on("activate", () => {
+    if (BrowserWindow.getAllWindows().length === 0) {
+      createWindow();
+    }
+  });
+}).catch((error: unknown) => {
+  console.error("Failed to bootstrap Electron app:", error);
+  app.quit();
+});
+
+process.on("unhandledRejection", (error: unknown) => {
+  console.error("Unhandled rejection in main process:", error);
+});
+
+app.on("window-all-closed", () => {
+  if (process.platform !== "darwin") {
+    app.quit();
+  }
+});
+
+app.on("before-quit", () => {
+  repo?.close();
+});

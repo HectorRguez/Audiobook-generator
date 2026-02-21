@@ -1,19 +1,46 @@
-const { spawn } = require("node:child_process");
-const kill = require("tree-kill");
+import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
+import kill from "tree-kill";
 
-function killChild(child) {
+export interface RunCommandOptions {
+  command: string;
+  args: string[];
+  cwd?: string;
+  env?: NodeJS.ProcessEnv;
+  stdinText?: string;
+  onSpawn?: (child: ChildProcessWithoutNullStreams) => void;
+  onStdout?: (text: string) => void;
+  onStderr?: (text: string) => void;
+  abortSignal?: AbortSignal;
+  windowsHide?: boolean;
+}
+
+export interface RunCommandResult {
+  stdout: string;
+  stderr: string;
+}
+
+interface CommandError extends Error {
+  stderr?: string;
+  stdout?: string;
+  code?: number | null;
+}
+
+export function killChild(child: ChildProcessWithoutNullStreams | null): void {
   if (!child || child.exitCode !== null || child.killed) {
+    return;
+  }
+  if (typeof child.pid !== "number") {
     return;
   }
 
   try {
     kill(child.pid);
   } catch {
-    // ignore
+    // Ignore process kill races.
   }
 }
 
-function runCommand(options) {
+export function runCommand(options: RunCommandOptions): Promise<RunCommandResult> {
   const {
     command,
     args,
@@ -35,9 +62,7 @@ function runCommand(options) {
       stdio: ["pipe", "pipe", "pipe"]
     });
 
-    if (onSpawn) {
-      onSpawn(child);
-    }
+    onSpawn?.(child);
 
     let stderr = "";
     let stdout = "";
@@ -49,7 +74,7 @@ function runCommand(options) {
       }
     };
 
-    const finalize = (fn) => {
+    const finalize = (fn: () => void) => {
       if (finished) {
         return;
       }
@@ -71,20 +96,16 @@ function runCommand(options) {
       abortSignal.addEventListener("abort", onAbort, { once: true });
     }
 
-    child.stdout.on("data", (data) => {
+    child.stdout.on("data", (data: Buffer) => {
       const text = data.toString();
       stdout += text;
-      if (onStdout) {
-        onStdout(text);
-      }
+      onStdout?.(text);
     });
 
-    child.stderr.on("data", (data) => {
+    child.stderr.on("data", (data: Buffer) => {
       const text = data.toString();
       stderr += text;
-      if (onStderr) {
-        onStderr(text);
-      }
+      onStderr?.(text);
     });
 
     child.on("error", (error) => {
@@ -97,7 +118,7 @@ function runCommand(options) {
         return;
       }
 
-      const error = new Error(`Command failed (${code}): ${command} ${args.join(" ")}`);
+      const error: CommandError = new Error(`Command failed (${code ?? "unknown"}): ${command} ${args.join(" ")}`);
       error.stderr = stderr;
       error.stdout = stdout;
       error.code = code;
@@ -110,8 +131,3 @@ function runCommand(options) {
     child.stdin.end();
   });
 }
-
-module.exports = {
-  runCommand,
-  killChild
-};

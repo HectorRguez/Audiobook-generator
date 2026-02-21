@@ -2,19 +2,22 @@
   "name": "audiobook-generator",
   "version": "0.1.0",
   "private": true,
-  "main": "electron/main.cjs",
+  "main": "dist-electron/main.js",
   "scripts": {
     "rebuild:native": "cross-env npm_config_devdir=.cache/node-gyp electron-builder install-app-deps",
     "postinstall": "npm run rebuild:native",
+    "build:scripts": "tsc -p tsconfig.scripts.build.json",
+    "build:electron": "tsc -p tsconfig.electron.json && npm run build:scripts && node dist-scripts/scripts/copy-electron-assets.js",
     "dev:renderer": "cd renderer && next dev -H 127.0.0.1 -p 3000",
     "dev:electron": "electron .",
-    "dev:desktop": "node scripts/dev-desktop.cjs",
+    "dev:desktop": "npm run build:electron && node dist-scripts/scripts/dev-desktop.js",
     "dev": "npm run dev:desktop",
     "build:renderer": "cd renderer && cross-env BUILD_STATIC=1 next build",
-    "build:desktop": "npm run build:renderer",
+    "build:desktop": "npm run build:electron && npm run build:renderer",
     "dist:win": "npm run build:desktop && electron-builder --win nsis --x64 --publish never",
     "lint": "cd renderer && next lint",
-    "verify:sidecars": "node scripts/verify-sidecar-manifest.cjs"
+    "verify:sidecars": "npm run build:scripts && node dist-scripts/scripts/verify-sidecar-manifest.js",
+    "typecheck": "tsc -p tsconfig.electron.json --noEmit && tsc -p tsconfig.scripts.json && cd renderer && tsc --noEmit"
   },
   "dependencies": {
     "adm-zip": "^0.5.16",
@@ -36,9 +39,12 @@
     "tree-kill": "^1.2.2"
   },
   "devDependencies": {
+    "@types/adm-zip": "^0.5.7",
+    "@types/better-sqlite3": "^7.6.12",
     "@types/node": "^22.15.21",
     "@types/react": "^19.0.10",
     "@types/react-dom": "^19.0.4",
+    "@types/sanitize-filename": "^1.6.3",
     "autoprefixer": "^10.4.21",
     "concurrently": "^9.2.0",
     "cross-env": "^7.0.3",
@@ -46,6 +52,7 @@
     "electron-builder": "^25.1.8",
     "postcss": "^8.5.3",
     "tailwindcss": "^3.4.17",
+    "tsx": "^4.21.0",
     "typescript": "^5.8.3",
     "wait-on": "^8.0.3"
   }

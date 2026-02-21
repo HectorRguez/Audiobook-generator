@@ -1,12 +1,15 @@
-const movingAverages = require("moving-averages");
+import { ema } from "moving-averages";
 
-class EtaEstimator {
+export class EtaEstimator {
+  private readonly maxSamples: number;
+  private readonly samples: number[];
+
   constructor(maxSamples = 30) {
     this.maxSamples = maxSamples;
     this.samples = [];
   }
 
-  addSample(chars, elapsedMs) {
+  addSample(chars: number, elapsedMs: number): void {
     if (!chars || !elapsedMs || elapsedMs <= 0) {
       return;
     }
@@ -22,7 +25,7 @@ class EtaEstimator {
     }
   }
 
-  estimateSeconds(totalChars, processedChars) {
+  estimateSeconds(totalChars: number, processedChars: number): number | null {
     if (!Number.isFinite(totalChars) || totalChars <= 0) {
       return null;
     }
@@ -36,8 +39,11 @@ class EtaEstimator {
       return null;
     }
 
-    const emaSeries = movingAverages.ema(this.samples, 0.35);
+    const emaSeries = ema(this.samples, 0.35) as number[];
     const currentRate = emaSeries[emaSeries.length - 1];
+    if (typeof currentRate !== "number") {
+      return null;
+    }
 
     if (!Number.isFinite(currentRate) || currentRate <= 0) {
       return null;
@@ -46,7 +52,3 @@ class EtaEstimator {
     return Math.ceil(remainingChars / currentRate);
   }
 }
-
-module.exports = {
-  EtaEstimator
-};
