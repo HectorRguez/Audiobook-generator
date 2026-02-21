@@ -501,7 +501,7 @@ export function Dashboard() {
                     <audio
                       controls
                       preload="metadata"
-                      className="mt-2 h-9 w-full"
+                      className="audio-preview mt-2 h-9 w-full bg-transparent"
                       src={playbackUrls[output.id]}
                       controlsList="nodownload noplaybackrate noremoteplayback"
                       onContextMenu={(event) => event.preventDefault()}

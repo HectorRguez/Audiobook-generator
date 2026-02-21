@@ -35,4 +35,10 @@
     color-scheme: dark;
     background-image: none;
   }
+
+  .audio-preview,
+  .audio-preview::-webkit-media-controls-enclosure,
+  .audio-preview::-webkit-media-controls-panel {
+    background-color: transparent;
+  }
 }
