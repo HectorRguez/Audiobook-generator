@@ -335,7 +335,7 @@ export function Dashboard() {
 
         <section className="grid min-h-0 flex-1 grid-cols-1 gap-4 xl:grid-cols-3">
           <Card
-            className="min-h-0"
+            className="flex h-full min-h-0 flex-col"
             onDragOver={(event) => event.preventDefault()}
             onDrop={(event) => {
               event.preventDefault();
@@ -346,7 +346,7 @@ export function Dashboard() {
               <CardTitle>Processing Queue</CardTitle>
               <CardDescription>Drag rows to reorder. Drop EPUB files here to enqueue.</CardDescription>
             </CardHeader>
-            <CardContent className="space-y-2 overflow-y-auto pb-4">
+            <CardContent className="min-h-0 flex-1 space-y-2 overflow-y-auto pb-4">
               {queueJobs.length === 0 ? (
                 <p className="rounded-lg border border-dashed border-border/70 bg-background/30 p-4 text-sm text-muted-foreground">
                   Queue is empty. Add one or more EPUB files.
@@ -412,7 +412,7 @@ export function Dashboard() {
           </Card>
 
           <section className="min-h-0 px-1 py-2">
-            <div className={activeJob ? "space-y-4" : "flex h-full items-center justify-center"}>
+            <div className={activeJob ? "flex h-full min-h-0 flex-col gap-4 overflow-y-auto pr-1" : "flex h-full items-center justify-center"}>
               {!activeJob ? (
                 <FileAudio2 className="h-14 w-14 text-muted-foreground/50" />
               ) : (
@@ -458,7 +458,7 @@ export function Dashboard() {
                   </div>
 
                   {activeJobDetail?.chapters && (
-                    <div className="max-h-56 space-y-1 overflow-y-auto rounded-lg border border-border/70 bg-background/40 p-2">
+                    <div className="min-h-0 flex-1 space-y-1 overflow-y-auto rounded-lg border border-border/70 bg-background/40 p-2">
                       {activeJobDetail.chapters.map((chapter) => (
                         <div key={chapter.id} className="flex items-center justify-between rounded-md px-2 py-1 text-xs">
                           <span className="truncate">{chapter.title}</span>
@@ -474,12 +474,12 @@ export function Dashboard() {
             </div>
           </section>
 
-          <Card className="min-h-0">
+          <Card className="flex h-full min-h-0 flex-col">
             <CardHeader>
               <CardTitle>Generated Audios</CardTitle>
               <CardDescription>Newest first. Export any completed audiobook.</CardDescription>
             </CardHeader>
-            <CardContent className="space-y-2 overflow-y-auto pb-4">
+            <CardContent className="min-h-0 flex-1 space-y-2 overflow-y-auto pb-4">
               {generated.length === 0 ? (
                 <p className="text-sm text-muted-foreground">No generated audiobooks yet.</p>
               ) : (

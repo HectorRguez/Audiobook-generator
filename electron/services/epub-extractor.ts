@@ -30,18 +30,9 @@ function pickText(value: unknown): string {
   return "";
 }
 
-function firstHeading(html: string): string | null {
-  const match = html.match(/<h[1-3][^>]*>([\s\S]*?)<\/h[1-3]>/i);
-  if (!match) {
-    return null;
-  }
-  const headingContent = match[1];
-  if (!headingContent) {
-    return null;
-  }
-
-  const heading = headingContent.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
-  return heading || null;
+interface HeadingMatch {
+  level: number;
+  text: string;
 }
 
 function documentTitle(html: string): string | null {
@@ -51,6 +42,122 @@ function documentTitle(html: string): string | null {
   }
   const value = match[1].replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
   return value || null;
+}
+
+function stripHtml(value: string): string {
+  return value.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+}
+
+function extractHeadings(html: string): HeadingMatch[] {
+  const headings: HeadingMatch[] = [];
+  const matches = html.matchAll(/<h([1-6])[^>]*>([\s\S]*?)<\/h\1>/gi);
+  for (const match of matches) {
+    const level = Number(match[1]);
+    const text = stripHtml(match[2] || "");
+    if (!Number.isInteger(level) || level < 1 || level > 6 || !text) {
+      continue;
+    }
+    headings.push({ level, text });
+  }
+  return headings;
+}
+
+function lowestHeading(html: string): string | null {
+  const headings = extractHeadings(html);
+  if (headings.length === 0) {
+    return null;
+  }
+  const deepestLevel = Math.max(...headings.map((heading) => heading.level));
+  const candidate = headings.find((heading) => heading.level === deepestLevel);
+  return candidate?.text || null;
+}
+
+function extractLeadParagraph(html: string): string | null {
+  const matches = html.matchAll(/<p[^>]*>([\s\S]*?)<\/p>/gi);
+  for (const match of matches) {
+    const paragraph = stripHtml(match[1] || "");
+    if (!paragraph) {
+      continue;
+    }
+    const words = paragraph.split(/\s+/).filter(Boolean);
+    if (words.length < 2 || words.length > 14) {
+      continue;
+    }
+    if (paragraph.length > 120) {
+      continue;
+    }
+    if (!/[A-Za-z\u00C0-\u024F]/.test(paragraph)) {
+      continue;
+    }
+    return paragraph;
+  }
+  return null;
+}
+
+function cleanTitle(value: string | null | undefined): string {
+  if (!value) {
+    return "";
+  }
+  return stripHtml(value);
+}
+
+function isNumberOnlyTitle(value: string): boolean {
+  if (!value) {
+    return false;
+  }
+  const trimmed = value.trim();
+  return /^\d+$/.test(trimmed) || /^(?=[IVXLCDM]+$)[IVXLCDM]+$/i.test(trimmed);
+}
+
+function isOrdinalTitle(value: string): boolean {
+  if (!value) {
+    return false;
+  }
+
+  const trimmed = value.trim();
+  return isNumberOnlyTitle(trimmed)
+    || /^(chapter|cap[ií]tulo|parte|part)\s+[\divxlcdm]+$/i.test(trimmed);
+}
+
+function isParatextHint(value: string): boolean {
+  if (!value) {
+    return false;
+  }
+
+  return /\b(cover|cubierta|portada|title|t[ií]tulo|credits?|cr[eé]ditos|copyright|colophon|info|synopsis|sinopsis|resumen|toc|contents?|table of contents|[ií]ndice|index|notes?|notas|appendix|appendices|ap[eé]ndice|acknowledg(e)?ments?)\b/i.test(value);
+}
+
+function isChapterHint(value: string): boolean {
+  if (!value) {
+    return false;
+  }
+
+  return /\b(chapter|cap[ií]tulo|part|parte|libro|book)\b/i.test(value) || /cap[ií]tulo\d+/i.test(value);
+}
+
+function composeChapterTitle(options: {
+  flowTitle: string;
+  headingTitle: string;
+  docTitleValue: string;
+  leadParagraph: string;
+  fallbackIndex: number;
+}): string {
+  const candidates = [options.flowTitle, options.headingTitle, options.docTitleValue].filter(Boolean);
+  const strong = candidates.find((value) => !isOrdinalTitle(value) && !isParatextHint(value) && !isNumberOnlyTitle(value));
+  if (strong) {
+    return strong;
+  }
+
+  if (options.leadParagraph) {
+    return options.leadParagraph;
+  }
+
+  const nonNumeric = candidates.find((value) => !isNumberOnlyTitle(value) && !isParatextHint(value));
+  if (nonNumeric) {
+    return nonNumeric;
+  }
+
+  return `Chapter ${options.fallbackIndex + 1}`;
 }
 
 function normalizeExtractedText(text: string): string {
@@ -176,8 +283,18 @@ async function extractEpubWithDependency(epubPath: string, workDir: string): Pro
   const chaptersDir = path.join(workDir, "chapters");
   await fs.mkdir(chaptersDir, { recursive: true });
 
-  const chapters: EpubExtractionResult["chapters"] = [];
-  let totalChars = 0;
+  interface ChapterCandidate {
+    id: string;
+    href: string;
+    flowTitle: string;
+    headingTitle: string;
+    docTitleValue: string;
+    leadParagraph: string;
+    text: string;
+    textLength: number;
+  }
+
+  const candidates: ChapterCandidate[] = [];
 
   const flow = asArray(instance.flow);
   for (const item of flow) {
@@ -203,18 +320,59 @@ async function extractEpubWithDependency(epubPath: string, workDir: string): Pro
       continue;
     }
 
-    totalChars += text.length;
-    const flowTitle = typeof item.title === "string" ? item.title.trim() : "";
-    const chapterTitle = flowTitle || firstHeading(html) || documentTitle(html) || `Chapter ${chapters.length + 1}`;
+    const href = typeof item.href === "string" ? item.href : "";
+    candidates.push({
+      id: chapterId,
+      href,
+      flowTitle: cleanTitle(typeof item.title === "string" ? item.title : ""),
+      headingTitle: cleanTitle(lowestHeading(html)),
+      docTitleValue: cleanTitle(documentTitle(html)),
+      leadParagraph: cleanTitle(extractLeadParagraph(html)),
+      text,
+      textLength: text.length
+    });
+  }
+
+  const chapterHintCount = candidates.filter((candidate) => {
+    const haystack = `${candidate.id} ${candidate.href} ${candidate.flowTitle} ${candidate.headingTitle} ${candidate.docTitleValue}`;
+    return isChapterHint(haystack) || (isOrdinalTitle(candidate.flowTitle) && candidate.textLength >= 2000);
+  }).length;
+  const hasStructuredChapters = chapterHintCount >= 3;
+
+  const filtered = candidates.filter((candidate) => {
+    if (!hasStructuredChapters) {
+      return true;
+    }
+
+    const haystack = `${candidate.id} ${candidate.href} ${candidate.flowTitle} ${candidate.headingTitle} ${candidate.docTitleValue}`;
+    if (isChapterHint(haystack)) {
+      return true;
+    }
+    return !isParatextHint(haystack);
+  });
+
+  const chapters: EpubExtractionResult["chapters"] = [];
+  let totalChars = 0;
+
+  for (const candidate of filtered) {
+    const chapterTitle = composeChapterTitle({
+      flowTitle: candidate.flowTitle,
+      headingTitle: candidate.headingTitle,
+      docTitleValue: candidate.docTitleValue,
+      leadParagraph: candidate.leadParagraph,
+      fallbackIndex: chapters.length
+    });
+
+    totalChars += candidate.textLength;
     const textPath = path.join(chaptersDir, `${String(chapters.length + 1).padStart(4, "0")}.txt`);
     // eslint-disable-next-line no-await-in-loop
-    await fs.writeFile(textPath, text, "utf8");
+    await fs.writeFile(textPath, candidate.text, "utf8");
 
     chapters.push({
       index: chapters.length,
       title: chapterTitle,
       textPath,
-      textLength: text.length
+      textLength: candidate.textLength
     });
   }
 
