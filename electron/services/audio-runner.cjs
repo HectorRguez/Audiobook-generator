@@ -1,8 +1,19 @@
 const fs = require("node:fs/promises");
 const path = require("node:path");
-const { parseFile } = require("music-metadata");
 const sanitize = require("sanitize-filename");
 const { runCommand } = require("./process-utils.cjs");
+
+let parseFileCached = null;
+
+async function getParseFile() {
+  if (parseFileCached) {
+    return parseFileCached;
+  }
+
+  const moduleRef = await import("music-metadata");
+  parseFileCached = moduleRef.parseFile;
+  return parseFileCached;
+}
 
 function quoteForConcat(filePath) {
   return `file '${filePath.replace(/'/g, "'\\''")}'`;
@@ -92,6 +103,7 @@ async function encodeFinalAudio(options) {
 }
 
 async function getDurationMs(filePath) {
+  const parseFile = await getParseFile();
   const metadata = await parseFile(filePath);
   const durationSec = metadata.format.duration || 0;
   return Math.round(durationSec * 1000);
