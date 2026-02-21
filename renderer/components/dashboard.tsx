@@ -106,6 +106,12 @@ interface UiStrings {
   deleteAudioAriaPrefix: string;
   bridgeUnavailableDetail: string;
   bootstrapInitFailed: string;
+  logPauseRequested: string;
+  logExtractingChapters: string;
+  logJobPaused: string;
+  logJobCanceled: string;
+  logStartingWithVoice: string;
+  logJobFinished: string;
   statusLabels: Record<JobStatus, string>;
 }
 
@@ -201,6 +207,30 @@ function localizeKnownRuntimeMessage(message: string, uiStrings: UiStrings) {
   return message;
 }
 
+function localizeKnownLogMessage(message: string, uiStrings: UiStrings) {
+  if (message === "Pause requested; stopping after current chunk.") {
+    return uiStrings.logPauseRequested;
+  }
+  if (message === "Extracting EPUB chapters.") {
+    return uiStrings.logExtractingChapters;
+  }
+  if (message === "Job paused.") {
+    return uiStrings.logJobPaused;
+  }
+  if (message === "Job canceled.") {
+    return uiStrings.logJobCanceled;
+  }
+  if (message.startsWith("Starting job processing with voice ")) {
+    const voiceName = message.replace("Starting job processing with voice ", "").replace(/\.$/, "").trim();
+    return uiStrings.logStartingWithVoice.replace("{voice}", voiceName || "-");
+  }
+  if (message.startsWith("Job finished: ")) {
+    const outputPath = message.replace("Job finished: ", "").trim();
+    return uiStrings.logJobFinished.replace("{path}", outputPath || "-");
+  }
+  return message;
+}
+
 const UI_STRINGS: Record<UiLocale, UiStrings> = {
   en: {
     appTitle: "Audiobook Generator",
@@ -245,6 +275,12 @@ const UI_STRINGS: Record<UiLocale, UiStrings> = {
     deleteAudioAriaPrefix: "Delete generated audio",
     bridgeUnavailableDetail: "Electron bridge unavailable in this view. Use the Electron app window started by `npm run dev`.",
     bootstrapInitFailed: "Failed to bootstrap runtime assets",
+    logPauseRequested: "Pause requested; stopping after current chunk.",
+    logExtractingChapters: "Extracting EPUB chapters.",
+    logJobPaused: "Job paused.",
+    logJobCanceled: "Job canceled.",
+    logStartingWithVoice: "Starting job processing with voice {voice}.",
+    logJobFinished: "Job finished: {path}",
     statusLabels: {
       queued: "Queued",
       extracting: "Extracting",
@@ -299,6 +335,12 @@ const UI_STRINGS: Record<UiLocale, UiStrings> = {
     deleteAudioAriaPrefix: "Eliminar audio generado",
     bridgeUnavailableDetail: "El puente de Electron no esta disponible en esta vista. Usa la ventana de la app iniciada con `npm run dev`.",
     bootstrapInitFailed: "No se pudieron preparar los recursos del runtime",
+    logPauseRequested: "Pausa solicitada; se detendra al finalizar el fragmento actual.",
+    logExtractingChapters: "Extrayendo capitulos del EPUB.",
+    logJobPaused: "Trabajo pausado.",
+    logJobCanceled: "Trabajo cancelado.",
+    logStartingWithVoice: "Iniciando procesamiento con la voz {voice}.",
+    logJobFinished: "Trabajo finalizado: {path}",
     statusLabels: {
       queued: "En cola",
       extracting: "Extrayendo",
@@ -1011,7 +1053,7 @@ export function Dashboard() {
 
                   {activeLog && (
                     <div className="rounded-lg border border-primary/35 bg-primary/10 p-3">
-                      <p className="text-sm text-foreground">{activeLog.message}</p>
+                      <p className="text-sm text-foreground">{localizeKnownLogMessage(activeLog.message, uiStrings)}</p>
                     </div>
                   )}
 
@@ -1114,9 +1156,6 @@ export function Dashboard() {
                   {typeof bootstrapStatus.totalBytes === "number" ? formatFileSize(bootstrapStatus.totalBytes) : uiStrings.unknownSize}
                 </span>
               </div>
-              <p className="text-center text-xs text-muted-foreground">
-                {uiStrings.runtimeLockedMessage}
-              </p>
             </CardContent>
           </Card>
         </div>
