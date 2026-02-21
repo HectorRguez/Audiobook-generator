@@ -318,12 +318,9 @@ export function Dashboard() {
   return (
     <main className="h-screen w-full p-4 lg:p-6">
       <div className="mx-auto flex h-full max-w-[1800px] flex-col gap-4">
-        <header className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border bg-card px-6 py-4">
-          <div>
-            <h1 className="text-xl font-semibold">Audiobook Generator</h1>
-            <p className="text-sm text-muted-foreground">EPUB queue with durable state and chapter-level checkpoints.</p>
-          </div>
-          <div className="flex items-center gap-2">
+        <header className="flex flex-col gap-3">
+          <h1 className="text-center text-2xl font-semibold">Audiobook Generator</h1>
+          <div className="flex flex-wrap items-center justify-end gap-2">
             {!bridgeReady && <Badge variant="destructive">Desktop bridge unavailable</Badge>}
             {bootstrapStatus?.phase === "error" && !bootstrapBlockingVisible && (
               <Badge variant="destructive">
@@ -414,37 +411,31 @@ export function Dashboard() {
             </CardContent>
           </Card>
 
-          <Card className="min-h-0 flex flex-col">
-            <CardHeader>
-              <CardTitle>Now Processing</CardTitle>
-              <CardDescription>Current book progress and estimated time left.</CardDescription>
-            </CardHeader>
-            <CardContent className={activeJob ? "space-y-4" : "flex flex-1 items-center justify-center"}>
+          <section className="min-h-0 px-1 py-2">
+            <div className={activeJob ? "space-y-4" : "flex h-full items-center justify-center"}>
               {!activeJob ? (
                 <FileAudio2 className="h-14 w-14 text-muted-foreground/50" />
               ) : (
                 <>
-                  <div className="rounded-xl border border-border/70 bg-background/40 p-4">
-                    <div className="flex flex-col items-center gap-3 text-center">
-                      <div className="relative rounded-2xl border border-border/70 bg-background/80 p-6">
-                        <FileAudio2 className="h-14 w-14 text-primary" />
-                        <Badge variant={statusVariant(activeJob.status)} className="absolute -right-3 -top-3">
-                          {activeJob.status}
-                        </Badge>
-                      </div>
-                      <p className="line-clamp-2 text-sm font-semibold">{activeJob.title}</p>
-                      <p className="line-clamp-1 text-xs text-muted-foreground">{activeJob.source_name}</p>
+                  <div className="flex flex-col items-center gap-3 text-center">
+                    <div className="relative rounded-2xl border border-border/70 bg-background/80 p-6">
+                      <FileAudio2 className="h-14 w-14 text-primary" />
+                      <Badge variant={statusVariant(activeJob.status)} className="absolute -right-3 -top-3">
+                        {activeJob.status}
+                      </Badge>
                     </div>
+                    <p className="line-clamp-2 text-sm font-semibold">{activeJob.title}</p>
+                    <p className="line-clamp-1 text-xs text-muted-foreground">{activeJob.source_name}</p>
+                  </div>
 
-                    <div className="mt-4 space-y-2">
-                      <Progress value={Math.round((activeJob.progress || 0) * 100)} />
-                      <div className="flex items-center justify-between text-xs text-muted-foreground">
-                        <span>{Math.round((activeJob.progress || 0) * 100)}%</span>
-                        <span className="inline-flex items-center gap-1">
-                          <Clock3 className="h-3.5 w-3.5" />
-                          {formatEta(activeJob.eta_seconds)}
-                        </span>
-                      </div>
+                  <div className="space-y-2">
+                    <Progress value={Math.round((activeJob.progress || 0) * 100)} />
+                    <div className="flex items-center justify-between text-xs text-muted-foreground">
+                      <span>{Math.round((activeJob.progress || 0) * 100)}%</span>
+                      <span className="inline-flex items-center gap-1">
+                        <Clock3 className="h-3.5 w-3.5" />
+                        {formatEta(activeJob.eta_seconds)}
+                      </span>
                     </div>
                   </div>
 
@@ -480,8 +471,8 @@ export function Dashboard() {
                   )}
                 </>
               )}
-            </CardContent>
-          </Card>
+            </div>
+          </section>
 
           <Card className="min-h-0">
             <CardHeader>
