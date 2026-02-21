@@ -336,7 +336,7 @@ export function Dashboard() {
           </div>
         </header>
 
-        <section className="grid min-h-0 flex-1 grid-cols-1 gap-4 xl:grid-cols-[1.3fr_1fr_1.2fr]">
+        <section className="grid min-h-0 flex-1 grid-cols-1 gap-4 xl:grid-cols-3">
           <Card
             className="min-h-0"
             onDragOver={(event) => event.preventDefault()}
@@ -414,14 +414,14 @@ export function Dashboard() {
             </CardContent>
           </Card>
 
-          <Card className="min-h-0">
+          <Card className="min-h-0 flex flex-col">
             <CardHeader>
               <CardTitle>Now Processing</CardTitle>
               <CardDescription>Current book progress and estimated time left.</CardDescription>
             </CardHeader>
-            <CardContent className="space-y-4">
+            <CardContent className={activeJob ? "space-y-4" : "flex flex-1 items-center justify-center"}>
               {!activeJob ? (
-                <p className="text-sm text-muted-foreground">No active processing job.</p>
+                <FileAudio2 className="h-14 w-14 text-muted-foreground/50" />
               ) : (
                 <>
                   <div className="rounded-xl border border-border/70 bg-background/40 p-4">
