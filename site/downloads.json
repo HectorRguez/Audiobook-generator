@@ -8,15 +8,9 @@
       "checksumUrl": "https://github.com/HectorRguez/Audiobook-generator/releases/latest/download/checksums-win32-x64.txt"
     },
     {
-      "label": "Linux x64 DEB",
+      "label": "Linux x64",
       "file": "Audiobook-Generator-linux-x64.deb",
       "url": "https://github.com/HectorRguez/Audiobook-generator/releases/latest/download/Audiobook-Generator-linux-x64.deb",
-      "checksumUrl": "https://github.com/HectorRguez/Audiobook-generator/releases/latest/download/checksums-linux-x64.txt"
-    },
-    {
-      "label": "Linux x64 RPM",
-      "file": "Audiobook-Generator-linux-x64.rpm",
-      "url": "https://github.com/HectorRguez/Audiobook-generator/releases/latest/download/Audiobook-Generator-linux-x64.rpm",
       "checksumUrl": "https://github.com/HectorRguez/Audiobook-generator/releases/latest/download/checksums-linux-x64.txt"
     },
     {
