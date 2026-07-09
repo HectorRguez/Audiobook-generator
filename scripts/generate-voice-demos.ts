@@ -71,11 +71,11 @@ function spawnServer(
   });
 }
 
-async function waitForInfo(port: number): Promise<void> {
+async function waitForReady(port: number, diagnostics: () => string): Promise<void> {
   const deadline = Date.now() + 30000;
   while (Date.now() < deadline) {
     try {
-      const response = await fetch(`http://127.0.0.1:${port}/info`);
+      const response = await fetch(`http://127.0.0.1:${port}/voices`);
       if (response.ok) {
         return;
       }
@@ -84,7 +84,7 @@ async function waitForInfo(port: number): Promise<void> {
     }
     await new Promise((resolve) => setTimeout(resolve, 250));
   }
-  throw new Error("Timed out waiting for Piper /info.");
+  throw new Error(`Timed out waiting for Piper /voices.\n${diagnostics()}`);
 }
 
 function run(command: string, args: string[]): Promise<void> {
@@ -123,14 +123,18 @@ async function synthesizeDemo(
 ): Promise<void> {
   const port = await freePort();
   const server = spawnServer(root, manifest, voice, port);
+  let stdout = "";
   let stderr = "";
+  server.stdout.on("data", (chunk: Buffer) => {
+    stdout += chunk.toString();
+  });
   server.stderr.on("data", (chunk: Buffer) => {
     stderr += chunk.toString();
   });
 
   try {
-    await waitForInfo(port);
-    const response = await fetch(`http://127.0.0.1:${port}/synthesize`, {
+    await waitForReady(port, () => `stdout:\n${stdout}\nstderr:\n${stderr}`);
+    const response = await fetch(`http://127.0.0.1:${port}/`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -138,7 +142,7 @@ async function synthesizeDemo(
       })
     });
     if (!response.ok) {
-      throw new Error(`/synthesize failed for ${voice.id} with ${response.status}: ${await response.text()}`);
+      throw new Error(`Piper HTTP synthesis failed for ${voice.id} with ${response.status}: ${await response.text()}`);
     }
 
     const cacheDir = path.join(".cache", "voice-demos");
@@ -160,8 +164,8 @@ async function synthesizeDemo(
     console.log(`Generated ${mp3Path}`);
   } finally {
     await stopServer(server);
-    if (server.exitCode !== 0 && stderr) {
-      console.error(stderr);
+    if (server.exitCode !== 0 && (stdout || stderr)) {
+      console.error(`Piper stdout:\n${stdout}\nPiper stderr:\n${stderr}`);
     }
   }
 }

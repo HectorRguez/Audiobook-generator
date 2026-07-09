@@ -159,13 +159,13 @@ async function benchmarkHttp(options: {
     for (const segment of options.segments) {
       const segmentStarted = Date.now();
       // eslint-disable-next-line no-await-in-loop
-      const response = await fetch(new URL("/synthesize", options.httpUrl), {
+      const response = await fetch(new URL("/", options.httpUrl), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ text: segment.text })
       });
       if (!response.ok) {
-        throw new Error(`HTTP synthesize failed (${response.status}).`);
+        throw new Error(`HTTP synthesis failed (${response.status}).`);
       }
 
       // eslint-disable-next-line no-await-in-loop

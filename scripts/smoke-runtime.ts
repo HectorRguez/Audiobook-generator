@@ -74,11 +74,11 @@ function spawnServer(
   });
 }
 
-async function waitForInfo(port: number): Promise<void> {
+async function waitForReady(port: number, diagnostics: () => string): Promise<void> {
   const deadline = Date.now() + 30000;
   while (Date.now() < deadline) {
     try {
-      const response = await fetch(`http://127.0.0.1:${port}/info`);
+      const response = await fetch(`http://127.0.0.1:${port}/voices`);
       if (response.ok) {
         return;
       }
@@ -87,7 +87,7 @@ async function waitForInfo(port: number): Promise<void> {
     }
     await new Promise((resolve) => setTimeout(resolve, 250));
   }
-  throw new Error("Timed out waiting for Piper /info.");
+  throw new Error(`Timed out waiting for Piper /voices.\n${diagnostics()}`);
 }
 
 function run(command: string, args: string[]): Promise<void> {
@@ -112,20 +112,24 @@ async function main(): Promise<void> {
   const manifest = JSON.parse(await fs.readFile(path.join(root, "runtime-manifest.json"), "utf8")) as RuntimeManifest;
   const port = await freePort();
   const server = spawnServer(root, manifest, port);
+  let stdout = "";
   let stderr = "";
+  server.stdout.on("data", (chunk: Buffer) => {
+    stdout += chunk.toString();
+  });
   server.stderr.on("data", (chunk: Buffer) => {
     stderr += chunk.toString();
   });
 
   try {
-    await waitForInfo(port);
-    const response = await fetch(`http://127.0.0.1:${port}/synthesize`, {
+    await waitForReady(port, () => `stdout:\n${stdout}\nstderr:\n${stderr}`);
+    const response = await fetch(`http://127.0.0.1:${port}/`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ text: "Prueba corta de voz para el generador de audiolibros." })
     });
     if (!response.ok) {
-      throw new Error(`/synthesize failed with ${response.status}: ${await response.text()}`);
+      throw new Error(`Piper HTTP synthesis failed with ${response.status}: ${await response.text()}`);
     }
     const outDir = path.join(".cache", "runtime-smoke");
     await fs.mkdir(outDir, { recursive: true });
@@ -147,8 +151,8 @@ async function main(): Promise<void> {
       once(server, "close"),
       new Promise((resolve) => setTimeout(resolve, 2000))
     ]);
-    if (server.exitCode !== 0 && stderr) {
-      console.error(stderr);
+    if (server.exitCode !== 0 && (stdout || stderr)) {
+      console.error(`Piper stdout:\n${stdout}\nPiper stderr:\n${stderr}`);
     }
   }
 }

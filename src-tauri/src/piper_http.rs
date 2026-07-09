@@ -91,17 +91,17 @@ impl PiperHttpEngine {
         let port = self
             .port
             .ok_or_else(|| anyhow!("Piper HTTP server is not running."))?;
-        let url = format!("http://127.0.0.1:{port}/synthesize");
+        let url = format!("http://127.0.0.1:{port}/");
         let response = self
             .client
             .post(url)
             .json(&serde_json::json!({ "text": text }))
             .send()
             .await
-            .context("Failed to call Piper /synthesize")?;
+            .context("Failed to call Piper HTTP synthesis endpoint")?;
         if !response.status().is_success() {
             return Err(anyhow!(
-                "Piper /synthesize failed with {}",
+                "Piper HTTP synthesis failed with {}",
                 response.status()
             ));
         }
@@ -121,14 +121,14 @@ impl PiperHttpEngine {
             }
             sleep(Duration::from_millis(250)).await;
         }
-        Err(anyhow!("Timed out waiting for Piper HTTP /info."))
+        Err(anyhow!("Timed out waiting for Piper HTTP /voices."))
     }
 
     async fn is_healthy(&self) -> bool {
         let Some(port) = self.port else {
             return false;
         };
-        let url = format!("http://127.0.0.1:{port}/info");
+        let url = format!("http://127.0.0.1:{port}/voices");
         self.client
             .get(url)
             .timeout(Duration::from_secs(2))
