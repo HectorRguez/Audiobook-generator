@@ -4,9 +4,9 @@
     "module": "commonjs",
     "moduleResolution": "node",
     "outDir": "dist-electron",
-    "rootDir": "electron",
+    "rootDir": ".",
     "types": ["node", "electron"]
   },
-  "include": ["electron/**/*.ts", "electron/**/*.d.ts"],
-  "exclude": ["node_modules", "dist-electron"]
+  "include": ["core/**/*.ts", "electron/**/*.ts", "electron/**/*.d.ts"],
+  "exclude": ["node_modules", "dist-electron", "core/**/*.test.ts"]
 }

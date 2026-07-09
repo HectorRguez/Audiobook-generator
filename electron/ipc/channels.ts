@@ -3,7 +3,8 @@ export const events = {
   JOB_UPDATED: "job-updated",
   GENERATED_UPDATED: "generated-updated",
   LOG_EVENT: "log-event",
-  BOOTSTRAP_STATUS: "bootstrap-status"
+  BOOTSTRAP_STATUS: "bootstrap-status",
+  SETTINGS_UPDATED: "settings-updated"
 } as const;
 
 export const commands = {

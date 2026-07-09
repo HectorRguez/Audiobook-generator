@@ -1,0 +1,36 @@
+{
+  "version": "latest",
+  "platforms": [
+    {
+      "label": "Windows x64",
+      "file": "Audiobook-Generator-windows-x64.exe",
+      "url": "https://github.com/HectorRguez/Audiobook-generator/releases/latest/download/Audiobook-Generator-windows-x64.exe",
+      "checksumUrl": "https://github.com/HectorRguez/Audiobook-generator/releases/latest/download/checksums-win32-x64.txt"
+    },
+    {
+      "label": "Linux x64",
+      "file": "Audiobook-Generator-linux-x64.AppImage",
+      "url": "https://github.com/HectorRguez/Audiobook-generator/releases/latest/download/Audiobook-Generator-linux-x64.AppImage",
+      "checksumUrl": "https://github.com/HectorRguez/Audiobook-generator/releases/latest/download/checksums-linux-x64.txt"
+    },
+    {
+      "label": "macOS Intel",
+      "file": "Audiobook-Generator-darwin-x64.dmg",
+      "url": "https://github.com/HectorRguez/Audiobook-generator/releases/latest/download/Audiobook-Generator-darwin-x64.dmg",
+      "checksumUrl": "https://github.com/HectorRguez/Audiobook-generator/releases/latest/download/checksums-darwin-x64.txt"
+    },
+    {
+      "label": "macOS Apple Silicon",
+      "file": "Audiobook-Generator-darwin-arm64.dmg",
+      "url": "https://github.com/HectorRguez/Audiobook-generator/releases/latest/download/Audiobook-Generator-darwin-arm64.dmg",
+      "checksumUrl": "https://github.com/HectorRguez/Audiobook-generator/releases/latest/download/checksums-darwin-arm64.txt"
+    }
+  ],
+  "voices": [
+    { "id": "es_ES-carlfm-high", "name": "Carlfm", "demoUrl": "voice-demos/es_ES-carlfm-high.mp3" },
+    { "id": "es_ES-davefx-medium", "name": "Davefx", "demoUrl": "voice-demos/es_ES-davefx-medium.mp3" },
+    { "id": "es_ES-sharvard-medium", "name": "Sharvard", "demoUrl": "voice-demos/es_ES-sharvard-medium.mp3" },
+    { "id": "es_ES-glados-medium", "name": "Glados", "demoUrl": "voice-demos/es_ES-glados-medium.mp3" },
+    { "id": "es_ES-miro-high", "name": "Miro", "demoUrl": "voice-demos/es_ES-miro-high.mp3" }
+  ]
+}

@@ -1,0 +1,49 @@
+{
+  "voices": [
+    {
+      "id": "es_ES-carlfm-high",
+      "name": "Carlfm",
+      "locale": "es_ES",
+      "quality": "high",
+      "sampleRate": 22050,
+      "modelUrl": "https://huggingface.co/friyin/vits-piper-es_ES-carlfm-high/resolve/main/es_ES-carlfm-high.onnx?download=true",
+      "configUrl": "https://huggingface.co/friyin/vits-piper-es_ES-carlfm-high/resolve/main/es_ES-carlfm-high.onnx.json?download=true"
+    },
+    {
+      "id": "es_ES-davefx-medium",
+      "name": "Davefx",
+      "locale": "es_ES",
+      "quality": "medium",
+      "sampleRate": 22050,
+      "modelUrl": "https://huggingface.co/rhasspy/piper-voices/resolve/main/es/es_ES/davefx/medium/es_ES-davefx-medium.onnx?download=true",
+      "configUrl": "https://huggingface.co/rhasspy/piper-voices/resolve/main/es/es_ES/davefx/medium/es_ES-davefx-medium.onnx.json?download=true"
+    },
+    {
+      "id": "es_ES-sharvard-medium",
+      "name": "Sharvard",
+      "locale": "es_ES",
+      "quality": "medium",
+      "sampleRate": 22050,
+      "modelUrl": "https://huggingface.co/rhasspy/piper-voices/resolve/main/es/es_ES/sharvard/medium/es_ES-sharvard-medium.onnx?download=true",
+      "configUrl": "https://huggingface.co/rhasspy/piper-voices/resolve/main/es/es_ES/sharvard/medium/es_ES-sharvard-medium.onnx.json?download=true"
+    },
+    {
+      "id": "es_ES-glados-medium",
+      "name": "Glados",
+      "locale": "es_ES",
+      "quality": "medium",
+      "sampleRate": 22050,
+      "modelUrl": "https://huggingface.co/csukuangfj/vits-piper-es_ES-glados-medium/resolve/main/es_ES-glados-medium.onnx?download=true",
+      "configUrl": "https://huggingface.co/csukuangfj/vits-piper-es_ES-glados-medium/resolve/main/es_ES-glados-medium.onnx.json?download=true"
+    },
+    {
+      "id": "es_ES-miro-high",
+      "name": "Miro",
+      "locale": "es_ES",
+      "quality": "high",
+      "sampleRate": 22050,
+      "modelUrl": "https://huggingface.co/csukuangfj/vits-piper-es_ES-miro-high/resolve/main/es_ES-miro-high.onnx?download=true",
+      "configUrl": "https://huggingface.co/csukuangfj/vits-piper-es_ES-miro-high/resolve/main/es_ES-miro-high.onnx.json?download=true"
+    }
+  ]
+}

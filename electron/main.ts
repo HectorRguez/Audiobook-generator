@@ -35,8 +35,6 @@ protocol.registerSchemesAsPrivileged([
 ]);
 
 const DEV_URL = process.env.ELECTRON_START_URL || "http://127.0.0.1:3000";
-const EMBEDDED_GH_TOKEN =
-  "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";
 
 let hasStartedAutoUpdateCheck = false;
 let isQuitting = false;
@@ -109,7 +107,8 @@ function initUpdater(): void {
   }
 
   if (!process.env.GH_TOKEN) {
-    process.env.GH_TOKEN = EMBEDDED_GH_TOKEN;
+    console.info("Auto-update disabled: GH_TOKEN is not set.");
+    return;
   }
 
   autoUpdater.autoDownload = true;
@@ -118,8 +117,7 @@ function initUpdater(): void {
   autoUpdater.allowDowngrade = false;
 
   const sanitizeUpdaterError = (error: unknown): string => {
-    const text = error instanceof Error ? error.message : String(error);
-    return text.replaceAll(EMBEDDED_GH_TOKEN, "[REDACTED]");
+    return error instanceof Error ? error.message : String(error);
   };
 
   autoUpdater.on("error", (error) => {
@@ -303,6 +301,7 @@ function wireQueueEvents(): void {
   qm.on("generatedUpdated", (payload) => sendToRenderer(events.GENERATED_UPDATED, payload));
   qm.on("logEvent", (payload) => sendToRenderer(events.LOG_EVENT, payload));
   qm.on("bootstrapStatusUpdated", (payload) => sendToRenderer(events.BOOTSTRAP_STATUS, payload));
+  qm.on("settingsUpdated", (payload) => sendToRenderer(events.SETTINGS_UPDATED, payload));
 }
 
 async function bootstrap(): Promise<void> {

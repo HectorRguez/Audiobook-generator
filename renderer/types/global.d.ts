@@ -34,6 +34,7 @@ declare global {
       onGeneratedUpdated: (callback: (outputs: GeneratedAudio[]) => void) => () => void;
       onLogEvent: (callback: (event: LogEvent) => void) => () => void;
       onBootstrapStatus: (callback: (status: BootstrapStatus) => void) => () => void;
+      onSettingsUpdated: (callback: (settings: Partial<AppSettings>) => void) => () => void;
     };
   }
 }

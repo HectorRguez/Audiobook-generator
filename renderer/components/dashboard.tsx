@@ -42,6 +42,7 @@ import type {
   QueueJob,
   VoiceInfo
 } from "@/lib/contracts";
+import { createTauriApi } from "@/lib/tauri-api";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -545,7 +546,11 @@ export function Dashboard() {
   const generatedContentRef = useRef<HTMLDivElement | null>(null);
 
   function getApi() {
-    return (window as { audiobook?: Window["audiobook"] }).audiobook;
+    const electronApi = (window as { audiobook?: Window["audiobook"] }).audiobook;
+    if (electronApi) {
+      return electronApi;
+    }
+    return createTauriApi();
   }
 
   const refresh = useCallback(async () => {
@@ -1238,7 +1243,7 @@ export function Dashboard() {
             <CardHeader className="pb-2">
               <CardTitle className="text-base">{uiStrings.deleteGeneratedTitle}</CardTitle>
               <CardDescription>
-                {uiStrings.deleteGeneratedSubtitlePrefix} "{generatedDeleteTarget.title}".
+                {uiStrings.deleteGeneratedSubtitlePrefix} &quot;{generatedDeleteTarget.title}&quot;.
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">

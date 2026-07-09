@@ -1,0 +1,259 @@
+import fs from "node:fs/promises";
+import fsSync from "node:fs";
+import path from "node:path";
+import { createHash } from "node:crypto";
+import { spawn } from "node:child_process";
+
+interface VoiceDefinition {
+  id: string;
+  name: string;
+  locale: string;
+  quality: string;
+  sampleRate: number;
+  modelUrl: string;
+  configUrl: string;
+}
+
+interface PythonAssetSelection {
+  assetName: string;
+  downloadUrl: string;
+  pythonBuildStandaloneVersion: string;
+}
+
+const TARGET_TRIPLES: Record<string, string> = {
+  "win32-x64": "x86_64-pc-windows-msvc",
+  "linux-x64": "x86_64-unknown-linux-gnu",
+  "darwin-x64": "x86_64-apple-darwin",
+  "darwin-arm64": "aarch64-apple-darwin",
+  "linux-arm64": "aarch64-unknown-linux-gnu"
+};
+
+function parseArg(name: string, fallback?: string): string {
+  const prefix = `--${name}=`;
+  const match = process.argv.find((arg) => arg.startsWith(prefix));
+  if (match) {
+    return match.slice(prefix.length);
+  }
+  const flagIndex = process.argv.indexOf(`--${name}`);
+  const flagValue = process.argv[flagIndex + 1];
+  if (flagIndex >= 0 && flagValue) {
+    return flagValue;
+  }
+  if (fallback !== undefined) {
+    return fallback;
+  }
+  throw new Error(`Missing --${name}`);
+}
+
+function run(command: string, args: string[], options: { cwd?: string } = {}): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const child = spawn(command, args, {
+      cwd: options.cwd,
+      stdio: "inherit",
+      shell: false
+    });
+    child.on("error", reject);
+    child.on("close", (code) => {
+      if (code === 0) {
+        resolve();
+      } else {
+        reject(new Error(`${command} ${args.join(" ")} failed with ${code}`));
+      }
+    });
+  });
+}
+
+async function download(url: string, target: string): Promise<void> {
+  if (fsSync.existsSync(target)) {
+    return;
+  }
+  await fs.mkdir(path.dirname(target), { recursive: true });
+  const response = await fetch(url);
+  if (!response.ok || !response.body) {
+    throw new Error(`Failed to download ${url}: ${response.status}`);
+  }
+  const buffer = Buffer.from(await response.arrayBuffer());
+  await fs.writeFile(target, buffer);
+}
+
+async function selectPythonAsset(target: string): Promise<PythonAssetSelection> {
+  const triple = TARGET_TRIPLES[target];
+  if (!triple) {
+    throw new Error(`Unsupported runtime target: ${target}`);
+  }
+  const releaseRef = process.env.PYTHON_BUILD_STANDALONE_RELEASE || "latest";
+  const url = releaseRef === "latest"
+    ? "https://api.github.com/repos/astral-sh/python-build-standalone/releases/latest"
+    : `https://api.github.com/repos/astral-sh/python-build-standalone/releases/tags/${releaseRef}`;
+  const response = await fetch(url, {
+    headers: { "User-Agent": "audiobook-generator-runtime-builder" }
+  });
+  if (!response.ok) {
+    throw new Error(`Failed to read python-build-standalone release metadata: ${response.status}`);
+  }
+  const release = await response.json() as {
+    tag_name: string;
+    assets: Array<{ name: string; browser_download_url: string }>;
+  };
+  const asset = release.assets.find((candidate) => {
+    return candidate.name.includes(triple)
+      && candidate.name.includes("install_only")
+      && candidate.name.endsWith(".tar.gz");
+  });
+  if (!asset) {
+    throw new Error(`No python-build-standalone asset found for ${target} (${triple}) in ${release.tag_name}`);
+  }
+  return {
+    assetName: asset.name,
+    downloadUrl: asset.browser_download_url,
+    pythonBuildStandaloneVersion: release.tag_name
+  };
+}
+
+async function findPythonExe(root: string, target: string): Promise<string> {
+  const candidates = target.startsWith("win32")
+    ? ["python/python.exe", "python/install/python.exe", "python/install/bin/python.exe"]
+    : ["python/bin/python3", "python/install/bin/python3", "python/bin/python"];
+  for (const candidate of candidates) {
+    const full = path.join(root, candidate);
+    if (fsSync.existsSync(full)) {
+      return candidate;
+    }
+  }
+  throw new Error(`Could not find embedded Python executable under ${root}`);
+}
+
+async function copyTool(toolName: string, envName: string, targetPath: string): Promise<void> {
+  const source = process.env[envName] || await which(toolName);
+  if (!source) {
+    throw new Error(`${toolName} not found. Set ${envName}.`);
+  }
+  await fs.mkdir(path.dirname(targetPath), { recursive: true });
+  await fs.copyFile(source, targetPath);
+  if (process.platform !== "win32") {
+    await fs.chmod(targetPath, 0o755);
+  }
+}
+
+function which(command: string): Promise<string | null> {
+  return new Promise((resolve) => {
+    const child = spawn(process.platform === "win32" ? "where" : "which", [command], {
+      stdio: ["ignore", "pipe", "ignore"],
+      shell: false
+    });
+    let stdout = "";
+    child.stdout.on("data", (chunk: Buffer) => {
+      stdout += chunk.toString();
+    });
+    child.on("close", (code) => {
+      if (code !== 0) {
+        resolve(null);
+        return;
+      }
+      resolve(stdout.split(/\r?\n/).map((line) => line.trim()).find(Boolean) || null);
+    });
+  });
+}
+
+async function hashDirectory(root: string): Promise<string> {
+  const hash = createHash("sha256");
+  async function walk(dir: string): Promise<void> {
+    const entries = await fs.readdir(dir, { withFileTypes: true });
+    entries.sort((a, b) => a.name.localeCompare(b.name));
+    for (const entry of entries) {
+      const full = path.join(dir, entry.name);
+      const relative = path.relative(root, full);
+      if (relative === "runtime-manifest.json") {
+        continue;
+      }
+      if (entry.isDirectory()) {
+        await walk(full);
+      } else if (entry.isFile()) {
+        hash.update(relative);
+        hash.update(await fs.readFile(full));
+      }
+    }
+  }
+  await walk(root);
+  return hash.digest("hex");
+}
+
+async function installPiper(pythonExe: string, target: string): Promise<void> {
+  const lockPath = path.join("runtime", "requirements", `${target}.txt`);
+  if (fsSync.existsSync(lockPath)) {
+    await run(pythonExe, ["-m", "pip", "install", "--require-hashes", "-r", lockPath]);
+    return;
+  }
+  await run(pythonExe, ["-m", "pip", "install", "piper-tts[http]==1.4.2"]);
+}
+
+async function main(): Promise<void> {
+  const target = parseArg("target", `${process.platform === "win32" ? "win32" : process.platform}-${process.arch}`);
+  const outRoot = parseArg("out", path.join("runtime", "dist", target));
+  await fs.rm(outRoot, { recursive: true, force: true });
+  await fs.mkdir(outRoot, { recursive: true });
+
+  const pythonAsset = await selectPythonAsset(target);
+  const archivePath = path.join(".cache", "runtime", pythonAsset.assetName);
+  await download(pythonAsset.downloadUrl, archivePath);
+  await run("tar", ["-xzf", path.resolve(archivePath), "-C", path.resolve(outRoot)]);
+
+  const pythonExeRelative = await findPythonExe(outRoot, target);
+  const pythonExe = path.resolve(outRoot, pythonExeRelative);
+  await installPiper(pythonExe, target);
+
+  await copyTool("ffmpeg", "FFMPEG_BIN", path.join(outRoot, "ffmpeg", process.platform === "win32" ? "ffmpeg.exe" : "ffmpeg"));
+  await copyTool("ffprobe", "FFPROBE_BIN", path.join(outRoot, "ffmpeg", process.platform === "win32" ? "ffprobe.exe" : "ffprobe"));
+
+  const voicesConfig = JSON.parse(await fs.readFile(path.join("runtime", "voices.json"), "utf8")) as { voices: VoiceDefinition[] };
+  const manifestVoices = [];
+  for (const voice of voicesConfig.voices) {
+    const modelPath = path.join("voices", `${voice.id}.onnx`);
+    const configPath = path.join("voices", `${voice.id}.onnx.json`);
+    await download(voice.modelUrl, path.join(outRoot, modelPath));
+    await download(voice.configUrl, path.join(outRoot, configPath));
+    manifestVoices.push({
+      id: voice.id,
+      name: voice.name,
+      locale: voice.locale,
+      quality: voice.quality,
+      modelPath,
+      configPath,
+      sampleRate: voice.sampleRate
+    });
+  }
+
+  const manifestBase = {
+    target,
+    pythonVersion: "unknown",
+    pythonBuildStandaloneVersion: pythonAsset.pythonBuildStandaloneVersion,
+    piperVersion: "1.4.2",
+    runtimeSha256: "",
+    pythonExe: pythonExeRelative,
+    piperServerEntrypoint: "piper.http_server",
+    ffmpegExe: path.join("ffmpeg", process.platform === "win32" ? "ffmpeg.exe" : "ffmpeg"),
+    ffprobeExe: path.join("ffmpeg", process.platform === "win32" ? "ffprobe.exe" : "ffprobe"),
+    voices: manifestVoices
+  };
+  const runtimeSha256 = await hashDirectory(outRoot);
+  await fs.writeFile(
+    path.join(outRoot, "runtime-manifest.json"),
+    JSON.stringify({ ...manifestBase, runtimeSha256 }, null, 2),
+    "utf8"
+  );
+  await fs.writeFile(
+    path.join(outRoot, "THIRD_PARTY_NOTICES.txt"),
+    [
+      "Bundled runtime includes python-build-standalone and piper-tts[http]==1.4.2.",
+      "Voice model licenses are inherited from their upstream model repositories.",
+      "FFmpeg/ffprobe are copied from the build environment or configured FFMPEG_BIN/FFPROBE_BIN."
+    ].join("\n"),
+    "utf8"
+  );
+  console.log(`Prepared runtime bundle at ${outRoot}`);
+}
+
+void main().catch((error: unknown) => {
+  console.error(error instanceof Error ? error.stack || error.message : String(error));
+  process.exit(1);
+});

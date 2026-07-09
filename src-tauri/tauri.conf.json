@@ -1,0 +1,39 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Audiobook Generator",
+  "version": "0.1.0",
+  "identifier": "com.hector.audiobookgenerator",
+  "build": {
+    "beforeDevCommand": "npm run dev:renderer",
+    "beforeBuildCommand": "npm run build:renderer",
+    "devUrl": "http://127.0.0.1:3000",
+    "frontendDist": "../renderer/out"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "Audiobook Generator",
+        "width": 1680,
+        "height": 980,
+        "minWidth": 1280,
+        "minHeight": 760,
+        "backgroundColor": "#0f172a"
+      }
+    ],
+    "security": {
+      "csp": null,
+      "assetProtocol": {
+        "enable": true,
+        "scope": ["$APPDATA/**", "$DOCUMENT/**", "$TEMP/**"]
+      }
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "icon": ["../build/icon.png", "../build/icon.ico"],
+    "resources": {
+      "../runtime/dist": "runtime"
+    }
+  }
+}

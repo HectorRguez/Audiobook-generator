@@ -40,6 +40,7 @@ interface PreloadApi {
   onGeneratedUpdated: (callback: (outputs: OutputRow[]) => void) => () => void;
   onLogEvent: (callback: (event: QueueLogEvent) => void) => () => void;
   onBootstrapStatus: (callback: (status: BootstrapStatus) => void) => () => void;
+  onSettingsUpdated: (callback: (settings: Partial<AppSettings>) => void) => () => void;
 }
 
 function subscribe<T>(channel: string, callback: (payload: T) => void): () => void {
@@ -72,7 +73,8 @@ const api: PreloadApi = {
   onJobUpdated: (callback) => subscribe(events.JOB_UPDATED, callback),
   onGeneratedUpdated: (callback) => subscribe(events.GENERATED_UPDATED, callback),
   onLogEvent: (callback) => subscribe(events.LOG_EVENT, callback),
-  onBootstrapStatus: (callback) => subscribe(events.BOOTSTRAP_STATUS, callback)
+  onBootstrapStatus: (callback) => subscribe(events.BOOTSTRAP_STATUS, callback),
+  onSettingsUpdated: (callback) => subscribe(events.SETTINGS_UPDATED, callback)
 };
 
 contextBridge.exposeInMainWorld("audiobook", api);

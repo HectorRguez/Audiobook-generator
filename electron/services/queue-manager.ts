@@ -4,16 +4,20 @@ import path from "node:path";
 import { EventEmitter } from "node:events";
 import type { ChildProcessWithoutNullStreams } from "node:child_process";
 import { extractEpub } from "./epub-extractor";
-import { splitIntoChunks } from "./text-utils";
 import { EtaEstimator } from "./eta-estimator";
 import { killChild, runCommand } from "./process-utils";
 import {
-  runPiperChunk,
+  PiperCliTtsEngine,
   concatWavs,
+  createSilenceWav,
   encodeFinalAudio,
+  getAudioInfo,
   getDurationMs,
-  buildOutputPaths
+  buildOutputPaths,
+  readVoiceSampleRate
 } from "./audio-runner";
+import { buildChapterPlan, type SilenceNarrationSegment, type SpeechNarrationSegment } from "../../core/narration-plan";
+import type { SpeechSegmentInput } from "../../core/tts-engine";
 import type {
   AppSettings,
   BootstrapStatus,
@@ -52,6 +56,15 @@ function asError(error: unknown): Error & { code?: string } {
     return error as Error & { code?: string };
   }
   return new Error(String(error));
+}
+
+async function fileExists(filePath: string): Promise<boolean> {
+  try {
+    await fsp.access(filePath);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 interface QueueManagerOptions {
@@ -492,9 +505,16 @@ export class QueueManager extends EventEmitter {
   private async processChapter(job: JobRow, chapter: ChapterRow, context: ChapterProcessContext): Promise<void> {
     const { workDir, assets, etaEstimator, totalChars, voiceModel, voiceConfig, useCuda } = context;
     const text = await fsp.readFile(chapter.text_path, "utf8");
-    const chunks = splitIntoChunks(text);
+    const chapterPlan = buildChapterPlan({
+      index: chapter.idx,
+      title: chapter.title,
+      text
+    });
+    const speechSegments = chapterPlan.segments.filter(
+      (segment): segment is SpeechNarrationSegment => segment.kind === "speech"
+    );
 
-    if (chunks.length === 0) {
+    if (speechSegments.length === 0) {
       this.repo.updateChapter(job.id, chapter.idx, {
         status: "encoded",
         chunk_cursor: 0,
@@ -506,71 +526,48 @@ export class QueueManager extends EventEmitter {
       return;
     }
 
-    const chapterAudioDir = path.join(workDir, "audio", "chunks", `${chapter.idx}`);
+    const chapterAudioDir = path.join(workDir, "audio", "segments", `${chapter.idx}`);
     await fsp.mkdir(chapterAudioDir, { recursive: true });
 
     this.repo.updateChapter(job.id, chapter.idx, {
       status: "processing",
-      total_chunks: chunks.length,
+      total_chunks: speechSegments.length,
       error_message: null
     });
 
-    const resumeCursor = Math.min(chapter.chunk_cursor, chunks.length);
-    let processedChars = this.repo.getJob(job.id)?.processed_chars ?? 0;
-    let chunkUseCuda = useCuda;
+    const speechInputs: SpeechSegmentInput[] = speechSegments.map((segment) => ({
+      speechIndex: segment.speechIndex,
+      text: segment.text,
+      outputPath: path.join(chapterAudioDir, `speech_${String(segment.speechIndex).padStart(5, "0")}.wav`)
+    }));
 
-    for (let chunkIdx = resumeCursor; chunkIdx < chunks.length; chunkIdx += 1) {
-      this.checkControlFlags(job.id);
-
-      const chunkText = chunks[chunkIdx];
-      if (!chunkText) {
+    let resumeCursor = Math.min(chapter.chunk_cursor, speechInputs.length);
+    for (let idx = 0; idx < resumeCursor; idx += 1) {
+      const speechInput = speechInputs[idx];
+      if (!speechInput) {
         continue;
       }
-      const chunkPath = path.join(chapterAudioDir, `chunk_${String(chunkIdx).padStart(5, "0")}.wav`);
-      const started = Date.now();
-
-      try {
-        await runPiperChunk({
-          piperExe: assets.piperExe,
-          voiceModel,
-          voiceConfig,
-          useCuda: chunkUseCuda,
-          text: chunkText,
-          outWavPath: chunkPath,
-          onSpawn: (child) => {
-            this.currentChild = child;
-          }
-        });
-      } catch (error: unknown) {
-        if (!chunkUseCuda || !this.shouldFallbackFromCudaError(error)) {
-          throw error;
-        }
-
-        chunkUseCuda = false;
-        this.log(job.id, "warning", "NVIDIA GPU acceleration failed; falling back to CPU.");
-        await runPiperChunk({
-          piperExe: assets.piperExe,
-          voiceModel,
-          voiceConfig,
-          useCuda: false,
-          text: chunkText,
-          outWavPath: chunkPath,
-          onSpawn: (child) => {
-            this.currentChild = child;
-          }
-        });
+      // eslint-disable-next-line no-await-in-loop
+      if (!await fileExists(speechInput.outputPath)) {
+        resumeCursor = idx;
+        break;
       }
+    }
 
-      const elapsedMs = Date.now() - started;
-      etaEstimator.addSample(chunkText.length, elapsedMs);
-      processedChars += chunkText.length;
+    let processedChars = this.repo.getJob(job.id)?.processed_chars ?? 0;
+    let currentSpeechCursor = resumeCursor;
+
+    const handleSpeechComplete = (segment: SpeechSegmentInput, elapsedMs: number): void => {
+      etaEstimator.addSample(segment.text.length, elapsedMs);
+      processedChars += segment.text.length;
+      currentSpeechCursor = Math.max(currentSpeechCursor, segment.speechIndex + 1);
       const etaSeconds = etaEstimator.estimateSeconds(totalChars, processedChars);
       const progress = totalChars > 0 ? Math.min(0.96, processedChars / totalChars) : 0;
 
       this.repo.updateChapter(job.id, chapter.idx, {
         status: "processing",
-        chunk_cursor: chunkIdx + 1,
-        total_chunks: chunks.length,
+        chunk_cursor: currentSpeechCursor,
+        total_chunks: speechInputs.length,
         error_message: null
       });
 
@@ -587,11 +584,81 @@ export class QueueManager extends EventEmitter {
 
       this.emitQueue();
       this.emitJob(job.id);
+    };
+
+    const synthesizeFrom = async (startIndex: number, synthesizeUseCuda: boolean): Promise<void> => {
+      this.checkControlFlags(job.id);
+      const engine = new PiperCliTtsEngine({
+        piperExe: assets.piperExe,
+        voiceModel,
+        voiceConfig,
+        useCuda: synthesizeUseCuda,
+        sentenceSilenceSeconds: chapterPlan.sentenceSilenceSeconds,
+        mode: "auto",
+        batchSize: 16
+      });
+      await engine.synthesizeSpeechSegments({
+        segments: speechInputs,
+        startIndex,
+        onSpawn: (child) => {
+          this.currentChild = child;
+        },
+        onLog: (line) => {
+          if (line) {
+            this.log(job.id, "info", line);
+          }
+        },
+        onSegmentComplete: handleSpeechComplete
+      });
+    };
+
+    try {
+      await synthesizeFrom(resumeCursor, useCuda);
+    } catch (error: unknown) {
+      if (!useCuda || !this.shouldFallbackFromCudaError(error)) {
+        throw error;
+      }
+
+      this.log(job.id, "warning", "NVIDIA GPU acceleration failed; falling back to CPU.");
+      await synthesizeFrom(currentSpeechCursor, false);
     }
 
-    const chunkFiles: string[] = [];
-    for (let i = 0; i < chunks.length; i += 1) {
-      chunkFiles.push(path.join(chapterAudioDir, `chunk_${String(i).padStart(5, "0")}.wav`));
+    this.checkControlFlags(job.id);
+
+    const firstSpeechPath = speechInputs[0]?.outputPath ?? null;
+    const voiceSampleRate = await readVoiceSampleRate(voiceConfig);
+    const firstSpeechInfo = firstSpeechPath ? await getAudioInfo(firstSpeechPath).catch(() => null) : null;
+    const sampleRate = voiceSampleRate ?? firstSpeechInfo?.sampleRate ?? 22050;
+    const segmentFiles: string[] = [];
+
+    for (const segment of chapterPlan.segments) {
+      this.checkControlFlags(job.id);
+
+      if (segment.kind === "speech") {
+        const speechInput = speechInputs[segment.speechIndex];
+        if (!speechInput) {
+          throw new Error(`Missing speech segment ${segment.speechIndex}.`);
+        }
+        segmentFiles.push(speechInput.outputPath);
+        continue;
+      }
+
+      const silence = segment as SilenceNarrationSegment;
+      const silencePath = path.join(
+        chapterAudioDir,
+        `silence_${String(silence.silenceIndex).padStart(5, "0")}_${silence.reason}.wav`
+      );
+      // eslint-disable-next-line no-await-in-loop
+      await createSilenceWav({
+        ffmpegExe: assets.ffmpegExe,
+        outWavPath: silencePath,
+        durationMs: silence.durationMs,
+        sampleRate,
+        onSpawn: (child) => {
+          this.currentChild = child;
+        }
+      });
+      segmentFiles.push(silencePath);
     }
 
     const chapterWavDir = path.join(workDir, "audio", "chapters");
@@ -600,7 +667,7 @@ export class QueueManager extends EventEmitter {
 
     await concatWavs({
       ffmpegExe: assets.ffmpegExe,
-      inputWavs: chunkFiles,
+      inputWavs: segmentFiles,
       outWavPath: chapterWavPath,
       tempDir: path.join(workDir, "tmp"),
       onSpawn: (child) => {
@@ -611,8 +678,8 @@ export class QueueManager extends EventEmitter {
     const durationMs = await getDurationMs(chapterWavPath).catch(() => 0);
     this.repo.updateChapter(job.id, chapter.idx, {
       status: "encoded",
-      chunk_cursor: chunks.length,
-      total_chunks: chunks.length,
+      chunk_cursor: speechInputs.length,
+      total_chunks: speechInputs.length,
       duration_ms: durationMs,
       audio_path: chapterWavPath,
       error_message: null

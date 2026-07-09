@@ -9,11 +9,14 @@ async function main(): Promise<void> {
   const root = process.cwd();
   const distElectron = path.join(root, "dist-electron");
 
-  await ensureDir(path.join(distElectron, "db"));
-  await fs.copyFile(path.join(root, "electron", "db", "schema.sql"), path.join(distElectron, "db", "schema.sql"));
+  await ensureDir(path.join(distElectron, "electron", "db"));
+  await fs.copyFile(
+    path.join(root, "electron", "db", "schema.sql"),
+    path.join(distElectron, "electron", "db", "schema.sql")
+  );
 
-  await fs.rm(path.join(distElectron, "assets"), { recursive: true, force: true });
-  await fs.cp(path.join(root, "electron", "assets"), path.join(distElectron, "assets"), {
+  await fs.rm(path.join(distElectron, "electron", "assets"), { recursive: true, force: true });
+  await fs.cp(path.join(root, "electron", "assets"), path.join(distElectron, "electron", "assets"), {
     recursive: true,
     force: true
   });
