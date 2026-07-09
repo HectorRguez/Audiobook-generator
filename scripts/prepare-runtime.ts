@@ -129,7 +129,7 @@ async function findPythonExe(root: string, target: string): Promise<string> {
 }
 
 async function copyTool(toolName: string, envName: string, targetPath: string): Promise<void> {
-  const source = process.env[envName] || await which(toolName);
+  const source = resolveWindowsToolShim(toolName, process.env[envName] || await which(toolName));
   if (!source) {
     throw new Error(`${toolName} not found. Set ${envName}.`);
   }
@@ -138,6 +138,37 @@ async function copyTool(toolName: string, envName: string, targetPath: string): 
   if (process.platform !== "win32") {
     await fs.chmod(targetPath, 0o755);
   }
+}
+
+function resolveWindowsToolShim(toolName: string, source: string | null): string | null {
+  if (!source || process.platform !== "win32") {
+    return source;
+  }
+
+  const normalized = source.replace(/\//g, "\\").toLowerCase();
+  const isChocolateyShim = normalized.includes("\\chocolatey\\bin\\")
+    && normalized.endsWith(`\\${toolName}.exe`);
+  if (!isChocolateyShim) {
+    return source;
+  }
+
+  const chocolateyRoot = process.env.ChocolateyInstall || "C:\\ProgramData\\chocolatey";
+  const realBinary = path.join(
+    chocolateyRoot,
+    "lib",
+    "ffmpeg",
+    "tools",
+    "ffmpeg",
+    "bin",
+    `${toolName}.exe`
+  );
+  if (fsSync.existsSync(realBinary)) {
+    return realBinary;
+  }
+
+  throw new Error(
+    `${toolName} resolved to Chocolatey shim ${source}, but the real binary was not found at ${realBinary}.`
+  );
 }
 
 function which(command: string): Promise<string | null> {
