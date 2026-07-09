@@ -85,9 +85,14 @@ async function selectPythonAsset(target: string): Promise<PythonAssetSelection> 
   const url = releaseRef === "latest"
     ? "https://api.github.com/repos/astral-sh/python-build-standalone/releases/latest"
     : `https://api.github.com/repos/astral-sh/python-build-standalone/releases/tags/${releaseRef}`;
-  const response = await fetch(url, {
-    headers: { "User-Agent": "audiobook-generator-runtime-builder" }
-  });
+  const headers: Record<string, string> = {
+    "Accept": "application/vnd.github+json",
+    "User-Agent": "audiobook-generator-runtime-builder"
+  };
+  if (process.env.GITHUB_TOKEN) {
+    headers.Authorization = `Bearer ${process.env.GITHUB_TOKEN}`;
+  }
+  const response = await fetch(url, { headers });
   if (!response.ok) {
     throw new Error(`Failed to read python-build-standalone release metadata: ${response.status}`);
   }

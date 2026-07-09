@@ -82,6 +82,8 @@ jobs:
         run: cargo clippy --manifest-path src-tauri/Cargo.toml -- -D warnings
 
       - name: Prepare Piper runtime
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: npm run build:runtime -- --target ${{ matrix.target }}
 
       - name: Smoke test Piper runtime
