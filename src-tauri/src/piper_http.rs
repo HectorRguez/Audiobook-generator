@@ -58,8 +58,6 @@ impl PiperHttpEngine {
             .arg(&assets.piper_server_entrypoint)
             .arg("--model")
             .arg(&voice.model_path)
-            .arg("--config")
-            .arg(&voice.config_path)
             .arg("--host")
             .arg("127.0.0.1")
             .arg("--port")

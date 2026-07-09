@@ -59,8 +59,6 @@ function spawnServer(
     manifest.piperServerEntrypoint,
     "--model",
     path.resolve(root, voice.modelPath),
-    "--config",
-    path.resolve(root, voice.configPath),
     "--host",
     "127.0.0.1",
     "--port",
