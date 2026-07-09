@@ -3,28 +3,40 @@ import fs from "node:fs/promises";
 import fsSync from "node:fs";
 import path from "node:path";
 
-interface ArtifactSpec {
+interface ArtifactFileSpec {
   extension: string;
   fileName: string;
 }
 
-const ARTIFACT_SPECS: Record<string, ArtifactSpec> = {
-  "win32-x64": {
-    extension: ".exe",
-    fileName: "Audiobook-Generator-windows-x64.exe"
-  },
-  "linux-x64": {
-    extension: ".AppImage",
-    fileName: "Audiobook-Generator-linux-x64.AppImage"
-  },
-  "darwin-x64": {
-    extension: ".dmg",
-    fileName: "Audiobook-Generator-darwin-x64.dmg"
-  },
-  "darwin-arm64": {
-    extension: ".dmg",
-    fileName: "Audiobook-Generator-darwin-arm64.dmg"
-  }
+const ARTIFACT_SPECS: Record<string, ArtifactFileSpec[]> = {
+  "win32-x64": [
+    {
+      extension: ".exe",
+      fileName: "Audiobook-Generator-windows-x64.exe"
+    }
+  ],
+  "linux-x64": [
+    {
+      extension: ".deb",
+      fileName: "Audiobook-Generator-linux-x64.deb"
+    },
+    {
+      extension: ".rpm",
+      fileName: "Audiobook-Generator-linux-x64.rpm"
+    }
+  ],
+  "darwin-x64": [
+    {
+      extension: ".dmg",
+      fileName: "Audiobook-Generator-darwin-x64.dmg"
+    }
+  ],
+  "darwin-arm64": [
+    {
+      extension: ".dmg",
+      fileName: "Audiobook-Generator-darwin-arm64.dmg"
+    }
+  ]
 };
 
 function parseArg(name: string, fallback?: string): string {
@@ -71,31 +83,37 @@ async function main(): Promise<void> {
   const target = parseArg("target");
   const bundleRoot = parseArg("bundle-root", path.join("src-tauri", "target", "release", "bundle"));
   const outDir = parseArg("out", "dist-upload");
-  const spec = ARTIFACT_SPECS[target];
-  if (!spec) {
+  const specs = ARTIFACT_SPECS[target];
+  if (!specs) {
     throw new Error(`Unsupported artifact target: ${target}`);
-  }
-
-  const candidates = (await walk(bundleRoot))
-    .filter((filePath) => filePath.endsWith(spec.extension))
-    .sort((a, b) => a.localeCompare(b));
-  const source = candidates[0];
-  if (!source) {
-    throw new Error(`No ${spec.extension} bundle found under ${bundleRoot}`);
   }
 
   await fs.rm(outDir, { recursive: true, force: true });
   await fs.mkdir(outDir, { recursive: true });
-  const destination = path.join(outDir, spec.fileName);
-  await fs.copyFile(source, destination);
+  const files = await walk(bundleRoot);
+  const checksumLines: string[] = [];
 
-  const hash = await sha256File(destination);
+  for (const spec of specs) {
+    const candidates = files
+      .filter((filePath) => filePath.endsWith(spec.extension))
+      .sort((a, b) => a.localeCompare(b));
+    const source = candidates[0];
+    if (!source) {
+      throw new Error(`No ${spec.extension} bundle found under ${bundleRoot}`);
+    }
+
+    const destination = path.join(outDir, spec.fileName);
+    await fs.copyFile(source, destination);
+    const hash = await sha256File(destination);
+    checksumLines.push(`${hash}  ${spec.fileName}`);
+    console.log(`Collected ${source} -> ${destination}`);
+  }
+
   await fs.writeFile(
     path.join(outDir, `checksums-${target}.txt`),
-    `${hash}  ${spec.fileName}\n`,
+    `${checksumLines.join("\n")}\n`,
     "utf8"
   );
-  console.log(`Collected ${source} -> ${destination}`);
 }
 
 void main().catch((error: unknown) => {
