@@ -63,6 +63,27 @@ function run(command: string, args: string[], options: { cwd?: string } = {}): P
   });
 }
 
+function runForOutput(command: string, args: string[]): Promise<{ code: number | null; stdout: string; stderr: string }> {
+  return new Promise((resolve, reject) => {
+    const child = spawn(command, args, {
+      stdio: ["ignore", "pipe", "pipe"],
+      shell: false
+    });
+    let stdout = "";
+    let stderr = "";
+    child.stdout.on("data", (chunk: Buffer) => {
+      stdout += chunk.toString();
+    });
+    child.stderr.on("data", (chunk: Buffer) => {
+      stderr += chunk.toString();
+    });
+    child.on("error", reject);
+    child.on("close", (code) => {
+      resolve({ code, stdout, stderr });
+    });
+  });
+}
+
 async function download(url: string, target: string): Promise<void> {
   if (fsSync.existsSync(target)) {
     return;
@@ -128,7 +149,7 @@ async function findPythonExe(root: string, target: string): Promise<string> {
   throw new Error(`Could not find embedded Python executable under ${root}`);
 }
 
-async function copyTool(toolName: string, envName: string, targetPath: string): Promise<void> {
+async function copyTool(toolName: string, envName: string, targetPath: string): Promise<string> {
   const source = resolveWindowsToolShim(toolName, process.env[envName] || await which(toolName));
   if (!source) {
     throw new Error(`${toolName} not found. Set ${envName}.`);
@@ -138,6 +159,7 @@ async function copyTool(toolName: string, envName: string, targetPath: string): 
   if (process.platform !== "win32") {
     await fs.chmod(targetPath, 0o755);
   }
+  return source;
 }
 
 function resolveWindowsToolShim(toolName: string, source: string | null): string | null {
@@ -223,6 +245,74 @@ async function installPiper(pythonExe: string, target: string): Promise<void> {
   await run(pythonExe, ["-m", "pip", "install", "piper-tts[http]==1.4.2"]);
 }
 
+const SKIPPED_LINUX_LIBS = [
+  "ld-linux",
+  "libBrokenLocale.so",
+  "libanl.so",
+  "libc.so",
+  "libdl.so",
+  "libm.so",
+  "libmvec.so",
+  "libnsl.so",
+  "libpthread.so",
+  "libresolv.so",
+  "librt.so",
+  "libthread_db.so",
+  "libutil.so"
+];
+
+function shouldBundleLinuxLibrary(libraryPath: string): boolean {
+  const name = path.basename(libraryPath);
+  return !SKIPPED_LINUX_LIBS.some((prefix) => name.startsWith(prefix));
+}
+
+async function linkedLinuxLibraries(binaryPath: string): Promise<string[]> {
+  const result = await runForOutput("ldd", [binaryPath]);
+  const output = `${result.stdout}\n${result.stderr}`;
+  if (output.includes("not found")) {
+    throw new Error(`Unresolved shared library while inspecting ${binaryPath}:\n${output}`);
+  }
+  if (result.code !== 0 && !output.includes("not a dynamic executable")) {
+    throw new Error(`ldd failed for ${binaryPath}:\n${output}`);
+  }
+
+  const libraries = new Set<string>();
+  for (const line of output.split(/\r?\n/)) {
+    const match = line.match(/=>\s+(\/\S+)/) ?? line.match(/^\s*(\/\S+)/);
+    const libraryPath = match?.[1];
+    if (!libraryPath || !shouldBundleLinuxLibrary(libraryPath)) {
+      continue;
+    }
+    if (fsSync.existsSync(libraryPath) && fsSync.statSync(libraryPath).isFile()) {
+      libraries.add(libraryPath);
+    }
+  }
+  return [...libraries].sort();
+}
+
+async function copyLinuxFfmpegLibraries(toolSources: string[], targetDir: string): Promise<void> {
+  if (process.platform !== "linux") {
+    return;
+  }
+
+  const libDir = path.join(targetDir, "lib");
+  const libraries = new Set<string>();
+  for (const source of toolSources) {
+    for (const libraryPath of await linkedLinuxLibraries(source)) {
+      libraries.add(libraryPath);
+    }
+  }
+
+  if (libraries.size === 0) {
+    return;
+  }
+
+  await fs.mkdir(libDir, { recursive: true });
+  for (const libraryPath of [...libraries].sort()) {
+    await fs.copyFile(libraryPath, path.join(libDir, path.basename(libraryPath)));
+  }
+}
+
 async function main(): Promise<void> {
   const target = parseArg("target", `${process.platform === "win32" ? "win32" : process.platform}-${process.arch}`);
   const outRoot = parseArg("out", path.join("runtime", "dist", target));
@@ -238,8 +328,10 @@ async function main(): Promise<void> {
   const pythonExe = path.resolve(outRoot, pythonExeRelative);
   await installPiper(pythonExe, target);
 
-  await copyTool("ffmpeg", "FFMPEG_BIN", path.join(outRoot, "ffmpeg", process.platform === "win32" ? "ffmpeg.exe" : "ffmpeg"));
-  await copyTool("ffprobe", "FFPROBE_BIN", path.join(outRoot, "ffmpeg", process.platform === "win32" ? "ffprobe.exe" : "ffprobe"));
+  const ffmpegDir = path.join(outRoot, "ffmpeg");
+  const ffmpegSource = await copyTool("ffmpeg", "FFMPEG_BIN", path.join(ffmpegDir, process.platform === "win32" ? "ffmpeg.exe" : "ffmpeg"));
+  const ffprobeSource = await copyTool("ffprobe", "FFPROBE_BIN", path.join(ffmpegDir, process.platform === "win32" ? "ffprobe.exe" : "ffprobe"));
+  await copyLinuxFfmpegLibraries([ffmpegSource, ffprobeSource], ffmpegDir);
 
   const voicesConfig = JSON.parse(await fs.readFile(path.join("runtime", "voices.json"), "utf8")) as { voices: VoiceDefinition[] };
   const manifestVoices = [];
@@ -282,7 +374,8 @@ async function main(): Promise<void> {
     [
       "Bundled runtime includes python-build-standalone and piper-tts[http]==1.4.2.",
       "Voice model licenses are inherited from their upstream model repositories.",
-      "FFmpeg/ffprobe are copied from the build environment or configured FFMPEG_BIN/FFPROBE_BIN."
+      "FFmpeg/ffprobe are copied from the build environment or configured FFMPEG_BIN/FFPROBE_BIN.",
+      "Linux FFmpeg shared libraries are copied into ffmpeg/lib when the source tools are dynamically linked."
     ].join("\n"),
     "utf8"
   );

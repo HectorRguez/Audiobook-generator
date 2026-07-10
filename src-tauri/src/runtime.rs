@@ -86,13 +86,22 @@ impl RuntimeAssets {
     }
 }
 
-fn target_key() -> String {
-    let os = match env::consts::OS {
+fn target_key_for(os: &str, arch: &str) -> String {
+    let os = match os {
         "windows" => "win32",
         "macos" => "darwin",
         other => other,
     };
-    format!("{os}-{}", env::consts::ARCH)
+    let arch = match arch {
+        "x86_64" => "x64",
+        "aarch64" => "arm64",
+        other => other,
+    };
+    format!("{os}-{arch}")
+}
+
+fn target_key() -> String {
+    target_key_for(env::consts::OS, env::consts::ARCH)
 }
 
 fn candidate_runtime_dirs(app: &AppHandle) -> Vec<PathBuf> {
@@ -203,5 +212,12 @@ mod tests {
         let parsed: RuntimeManifest = serde_json::from_str(manifest).unwrap();
         assert_eq!(parsed.piper_version, "1.4.2");
         assert_eq!(parsed.voices[0].id, "es_ES-carlfm-high");
+    }
+
+    #[test]
+    fn normalizes_packaged_target_keys() {
+        assert_eq!(target_key_for("linux", "x86_64"), "linux-x64");
+        assert_eq!(target_key_for("macos", "aarch64"), "darwin-arm64");
+        assert_eq!(target_key_for("windows", "x86_64"), "win32-x64");
     }
 }

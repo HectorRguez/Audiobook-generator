@@ -42,7 +42,7 @@ import type {
   QueueJob,
   VoiceInfo
 } from "@/lib/contracts";
-import { createTauriApi } from "@/lib/tauri-api";
+import { createTauriApi, type DesktopApi } from "@/lib/tauri-api";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -60,7 +60,7 @@ function statusVariant(status: JobStatus) {
 }
 
 const BOOTSTRAP_INIT_ERROR = "Failed to bootstrap runtime assets";
-const BRIDGE_UNAVAILABLE_ERROR = "Electron bridge unavailable in this view. Use the Electron app window started by `npm run dev`.";
+const BRIDGE_UNAVAILABLE_ERROR = "Desktop runtime unavailable in this view. Use the Tauri app window started by `npm run dev`.";
 
 type UiLocale = "en" | "es";
 
@@ -268,7 +268,7 @@ const UI_STRINGS: Record<UiLocale, UiStrings> = {
     appTitle: "Audiobook Generator",
     addEpubFiles: "Add EPUB Files",
     settings: "Settings",
-    bridgeUnavailableBadge: "Desktop bridge unavailable",
+    bridgeUnavailableBadge: "Desktop runtime unavailable",
     queueTitle: "Processing Queue",
     queueDescription: "Drag rows to reorder. Drop EPUB files here to enqueue.",
     queueEmpty: "Queue is empty. Add one or more EPUB files.",
@@ -309,7 +309,7 @@ const UI_STRINGS: Record<UiLocale, UiStrings> = {
     deleteQueueAriaPrefix: "Delete queue item",
     downloadAudioAriaPrefix: "Download generated audio",
     deleteAudioAriaPrefix: "Delete generated audio",
-    bridgeUnavailableDetail: "Electron bridge unavailable in this view. Use the Electron app window started by `npm run dev`.",
+    bridgeUnavailableDetail: "Desktop runtime unavailable in this view. Use the Tauri app window started by `npm run dev`.",
     bootstrapInitFailed: "Failed to bootstrap runtime assets",
     logPauseRequested: "Pause requested; stopping after current chunk.",
     logExtractingChapters: "Extracting EPUB chapters.",
@@ -338,7 +338,7 @@ const UI_STRINGS: Record<UiLocale, UiStrings> = {
     appTitle: "Generador de Audiolibros",
     addEpubFiles: "Agregar archivos EPUB",
     settings: "Ajustes",
-    bridgeUnavailableBadge: "Puente de escritorio no disponible",
+    bridgeUnavailableBadge: "Runtime de escritorio no disponible",
     queueTitle: "Cola de procesamiento",
     queueDescription: "Arrastra filas para reordenar. Suelta archivos EPUB aqui para encolarlos.",
     queueEmpty: "La cola esta vacia. Agrega uno o mas archivos EPUB.",
@@ -379,7 +379,7 @@ const UI_STRINGS: Record<UiLocale, UiStrings> = {
     deleteQueueAriaPrefix: "Eliminar elemento de la cola",
     downloadAudioAriaPrefix: "Descargar audio generado",
     deleteAudioAriaPrefix: "Eliminar audio generado",
-    bridgeUnavailableDetail: "El puente de Electron no esta disponible en esta vista. Usa la ventana de la app iniciada con `npm run dev`.",
+    bridgeUnavailableDetail: "El runtime de escritorio no esta disponible en esta vista. Usa la ventana Tauri iniciada con `npm run dev`.",
     bootstrapInitFailed: "No se pudieron preparar los recursos del runtime",
     logPauseRequested: "Pausa solicitada; se detendra al finalizar el fragmento actual.",
     logExtractingChapters: "Extrayendo capitulos del EPUB.",
@@ -545,11 +545,7 @@ export function Dashboard() {
   const queueContentRef = useRef<HTMLDivElement | null>(null);
   const generatedContentRef = useRef<HTMLDivElement | null>(null);
 
-  function getApi() {
-    const electronApi = (window as { audiobook?: Window["audiobook"] }).audiobook;
-    if (electronApi) {
-      return electronApi;
-    }
+  function getApi(): DesktopApi | null {
     return createTauriApi();
   }
 

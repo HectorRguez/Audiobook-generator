@@ -94,7 +94,7 @@ impl QueueManager {
     pub async fn list_voices(&self) -> Vec<VoiceInfo> {
         match self.bootstrap_assets().await {
             Ok(runtime) => runtime.voice_infos(),
-            Err(_) => fallback_voices(),
+            Err(_) => Vec::new(),
         }
     }
 
@@ -481,17 +481,6 @@ impl QueueManager {
 
 struct ChapterProcessResult {
     processed_chars: i64,
-}
-
-fn fallback_voices() -> Vec<VoiceInfo> {
-    vec![VoiceInfo {
-        id: "es_ES-carlfm-high".to_string(),
-        name: "Carlfm".to_string(),
-        model_path: None,
-        locale: Some("es_ES".to_string()),
-        speaker: Some("carlfm".to_string()),
-        quality: Some("high".to_string()),
-    }]
 }
 
 fn now_ts() -> i64 {

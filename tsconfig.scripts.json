@@ -6,6 +6,6 @@
     "types": ["node"],
     "noEmit": true
   },
-  "include": ["core/**/*.ts", "scripts/**/*.ts", "electron/types.ts", "electron/external-modules.d.ts"],
+  "include": ["core/**/*.ts", "scripts/**/*.ts"],
   "exclude": ["node_modules", "core/**/*.test.ts"]
 }

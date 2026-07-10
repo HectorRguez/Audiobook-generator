@@ -1,24 +1,26 @@
 # Audiobook Generator
 
-Next static renderer with Electron compatibility and a Tauri v2 migration path to
-process **EPUB -> audiobook** with a durable queue.
+Tauri v2 desktop app that turns EPUB files into local audiobooks with a bundled
+Python runtime running `piper-tts[http]==1.4.2`.
 
 ## Highlights
 
-- EPUB-only ingestion (multi-file enqueue)
-- Persistent queue and generated library in SQLite
-- 3-panel UI:
-  - left: draggable processing queue
-  - center: active progress + ETA
-  - right: generated audios (newest first) with export button
-- Checkpoint persistence while processing (chapter/chunk progress)
-- Tauri v2 shell scaffold for smaller desktop binaries
-- Bundled runtime plan based on embedded Python + `piper-tts[http]==1.4.2`
-- Piper HTTP backend for persistent local synthesis
+- EPUB-only ingestion with multi-file enqueue.
+- Persistent queue and generated-audio library in SQLite.
+- Tauri v2 shell with a static Next renderer.
+- Bundled per-platform runtime assets:
+  - embedded Python
+  - Piper HTTP server
+  - ffmpeg and ffprobe
+  - selected Spanish Piper voices
+- Persistent local Piper HTTP synthesis backend.
+- GitHub Actions matrix builds for Windows, Linux, macOS Intel, and macOS Apple
+  Silicon.
+- GitHub Pages download site backed by GitHub Release assets.
 
-## Voice defaults
+## Voice Defaults
 
-The bundled runtime manifest carries a curated `es_ES` set and uses
+The bundled runtime manifest carries a curated `es_ES` voice set and uses
 `es_ES-carlfm-high` as the default voice.
 
 ## Development
@@ -28,58 +30,38 @@ npm install
 npm run dev
 ```
 
-Tauri development:
+`npm run dev` starts the Tauri app. The renderer can still be run directly for UI
+work:
 
 ```bash
-npm run dev:tauri
+npm run dev:renderer
 ```
 
-## Build
-
-```bash
-npm run build:desktop
-npm run dist:win
-```
-
-Tauri build:
+## Runtime Build And Smoke Test
 
 ```bash
 npm run build:runtime -- --target linux-x64
 npm run smoke:runtime -- --runtime runtime/dist/linux-x64
 npm run build:voice-demos -- --runtime runtime/dist/linux-x64 --out voice-demos
+```
+
+Supported initial runtime targets:
+
+- `win32-x64`
+- `linux-x64`
+- `darwin-x64`
+- `darwin-arm64`
+
+## App Build
+
+```bash
 npm run build:tauri
 npm run collect:tauri-artifacts -- --target linux-x64
 ```
 
-## Sidecar manifest
-
-`electron/assets/sidecar-manifest.json` controls the legacy Electron-side
-runtime asset downloads.
-
-- Use direct downloadable URLs.
-- Do not use postdownload URLs.
-- Keep `paths` aligned with extracted archive layout.
-- Replace current `example.com` placeholders with real pinned download URLs before shipping.
-
-Validate manifest:
-
-```bash
-npm run verify:sidecars
-```
-
-## Piper benchmark
-
-Compare Piper startup modes with local assets:
-
-```bash
-PIPER_BIN=/path/to/piper \
-PIPER_VOICE_MODEL=/path/to/voice.onnx \
-PIPER_VOICE_CONFIG=/path/to/voice.onnx.json \
-npm run benchmark:piper
-```
-
-Set `PIPER_HTTP_URL` to include a locally running Piper HTTP server in the
-comparison. The report is written to `.cache/` by default.
+CI prepares the runtime before building Tauri. For local builds, prepare the
+matching runtime target first, or set `AUDIOBOOK_RUNTIME_DIR` to a prepared
+runtime directory.
 
 ## GitHub Pages
 
@@ -89,14 +71,20 @@ The public download page lives under `site/` and is built with:
 npm run build:site
 ```
 
-The page intentionally mirrors the minimal style of the Numbda personal site:
-mono text, beige background, serif title, compact headings, dot bullets, and
-outlined download links.
+The page is intentionally minimal: mono text, beige background, serif title,
+compact headings, dot bullets, and outlined download links. Binaries are not
+stored in Pages; the page links to GitHub Release assets through
+`releases/latest/download/...`.
 
-## Notes
+## Release Flow
 
-- Auto-update is wired via `electron-updater` for packaged Windows builds and
-  only runs when `GH_TOKEN` is provided by the runtime environment.
-- Tauri release workflow is in `.github/workflows/build-tauri.yml`.
-- Tauri runtime assets are loaded from bundled resources or
-  `AUDIOBOOK_RUNTIME_DIR` during development.
+Pushes to `main` build and upload workflow artifacts, then deploy Pages. Tags
+matching `v*` build the same platform matrix and publish GitHub Release assets.
+
+```bash
+git tag v0.3.0
+git push origin v0.3.0
+```
+
+Initial builds are unsigned. Windows/macOS signing and notarization are a
+separate hardening step.

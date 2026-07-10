@@ -2,6 +2,7 @@ use anyhow::{anyhow, Context, Result};
 use sanitize_filename::sanitize;
 use serde_json::Value;
 use std::{
+    env,
     fs,
     path::{Path, PathBuf},
     process::Stdio,
@@ -51,6 +52,34 @@ fn quote_for_concat(path: &Path) -> String {
     format!("file '{}'", path.to_string_lossy().replace('\'', "'\\''"))
 }
 
+fn prepend_path_env(command: &mut Command, key: &str, value: &Path) {
+    let mut paths = vec![value.to_path_buf()];
+    if let Some(existing) = env::var_os(key) {
+        paths.extend(env::split_paths(&existing));
+    }
+    if let Ok(joined) = env::join_paths(paths) {
+        command.env(key, joined);
+    }
+}
+
+fn runtime_tool_command(exe: &Path) -> Command {
+    let mut command = Command::new(exe);
+    if let Some(parent) = exe.parent() {
+        let lib_dir = parent.join("lib");
+        if lib_dir.is_dir() {
+            #[cfg(target_os = "linux")]
+            prepend_path_env(&mut command, "LD_LIBRARY_PATH", &lib_dir);
+
+            #[cfg(target_os = "macos")]
+            prepend_path_env(&mut command, "DYLD_LIBRARY_PATH", &lib_dir);
+
+            #[cfg(windows)]
+            prepend_path_env(&mut command, "PATH", &lib_dir);
+        }
+    }
+    command
+}
+
 pub async fn concat_wavs(
     ffmpeg: &Path,
     inputs: &[PathBuf],
@@ -71,7 +100,8 @@ pub async fn concat_wavs(
         .collect::<Vec<_>>()
         .join("\n");
     fs::write(&list_path, list)?;
-    let status = Command::new(ffmpeg)
+    let mut command = runtime_tool_command(ffmpeg);
+    let status = command
         .args(["-y", "-f", "concat", "-safe", "0", "-i"])
         .arg(&list_path)
         .args(["-c", "copy"])
@@ -98,7 +128,7 @@ pub async fn encode_final_audio(
     if let Some(parent) = output.parent() {
         fs::create_dir_all(parent)?;
     }
-    let mut command = Command::new(ffmpeg);
+    let mut command = runtime_tool_command(ffmpeg);
     command.arg("-y").arg("-i").arg(input_wav);
     command.arg("-metadata").arg(format!("title={title}"));
     if let Some(author) = author {
@@ -122,7 +152,8 @@ pub async fn encode_final_audio(
 }
 
 pub async fn duration_ms(ffprobe: &Path, input: &Path) -> Result<i64> {
-    let output = Command::new(ffprobe)
+    let mut command = runtime_tool_command(ffprobe);
+    let output = command
         .args([
             "-v",
             "error",

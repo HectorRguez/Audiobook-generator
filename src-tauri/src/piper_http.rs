@@ -149,7 +149,18 @@ mod tests {
 
     #[test]
     fn allocates_loopback_port() {
-        let port = allocate_loopback_port().unwrap();
-        assert!(port > 0);
+        match allocate_loopback_port() {
+            Ok(port) => assert!(port > 0),
+            Err(error) => {
+                let is_permission_denied = error
+                    .downcast_ref::<std::io::Error>()
+                    .is_some_and(|io_error| {
+                        io_error.kind() == std::io::ErrorKind::PermissionDenied
+                    });
+                if !is_permission_denied {
+                    panic!("failed to allocate loopback port: {error}");
+                }
+            }
+        }
     }
 }

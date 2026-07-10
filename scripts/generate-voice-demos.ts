@@ -1,4 +1,5 @@
 import fs from "node:fs/promises";
+import fsSync from "node:fs";
 import path from "node:path";
 import { spawn, type ChildProcessByStdio } from "node:child_process";
 import { once } from "node:events";
@@ -69,6 +70,22 @@ function spawnServer(
   });
 }
 
+function toolEnv(command: string): NodeJS.ProcessEnv {
+  const env = { ...process.env };
+  const libDir = path.join(path.dirname(command), "lib");
+  if (!fsSync.existsSync(libDir)) {
+    return env;
+  }
+
+  const key = process.platform === "darwin"
+    ? "DYLD_LIBRARY_PATH"
+    : process.platform === "win32"
+      ? "PATH"
+      : "LD_LIBRARY_PATH";
+  env[key] = [libDir, env[key]].filter(Boolean).join(path.delimiter);
+  return env;
+}
+
 async function waitForReady(port: number, diagnostics: () => string): Promise<void> {
   const deadline = Date.now() + 30000;
   while (Date.now() < deadline) {
@@ -88,6 +105,7 @@ async function waitForReady(port: number, diagnostics: () => string): Promise<vo
 function run(command: string, args: string[]): Promise<void> {
   return new Promise((resolve, reject) => {
     const child = spawn(command, args, {
+      env: toolEnv(command),
       stdio: "inherit",
       shell: false
     });
