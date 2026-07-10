@@ -17,6 +17,12 @@ interface RuntimeManifest {
   }>;
 }
 
+const DEMO_TEXT = [
+  "Este es un fragmento de demostracion para escuchar el ritmo, la claridad y el tono de esta voz.",
+  "La aplicacion convierte tus libros EPUB en audiolibros sin enviar el texto a internet.",
+  "Todo el proceso ocurre en tu ordenador, para que puedas escuchar tus lecturas con privacidad y sin pagar por cada minuto generado."
+].join(" ");
+
 function parseArg(name: string, fallback?: string): string {
   const prefix = `--${name}=`;
   const match = process.argv.find((arg) => arg.startsWith(prefix));
@@ -154,7 +160,7 @@ async function synthesizeDemo(
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        text: "Una muestra breve de esta voz para el generador de audiolibros."
+        text: DEMO_TEXT
       })
     });
     if (!response.ok) {
