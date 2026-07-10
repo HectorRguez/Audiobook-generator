@@ -20,10 +20,6 @@ jobs:
             os: windows-latest
           - target: linux-x64
             os: ubuntu-latest
-          - target: darwin-x64
-            os: macos-15-intel
-          - target: darwin-arm64
-            os: macos-14
 
     runs-on: ${{ matrix.os }}
     permissions:
@@ -53,10 +49,6 @@ jobs:
             librsvg2-dev \
             patchelf \
             ffmpeg
-
-      - name: Install macOS ffmpeg
-        if: runner.os == 'macOS'
-        run: brew install ffmpeg
 
       - name: Install Windows ffmpeg
         if: runner.os == 'Windows'

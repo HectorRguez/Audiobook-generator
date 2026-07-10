@@ -91,9 +91,6 @@
   <h2>Voice demos</h2>
   <div id="voices"></div>
 
-  <h2>macOS note</h2>
-  <p>Initial builds are unsigned. If macOS blocks the app, open System Settings, go to Privacy & Security, and allow the app after the first launch attempt.</p>
-
   <script>
     async function main() {
       const data = await fetch("downloads.json", { cache: "no-store" }).then((response) => response.json());

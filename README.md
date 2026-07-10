@@ -14,8 +14,7 @@ Python runtime running `piper-tts[http]==1.4.2`.
   - ffmpeg and ffprobe
   - selected Spanish Piper voices
 - Persistent local Piper HTTP synthesis backend.
-- GitHub Actions matrix builds for Windows, Linux, macOS Intel, and macOS Apple
-  Silicon.
+- GitHub Actions matrix builds for Windows and Linux.
 - GitHub Pages download site backed by GitHub Release assets.
 
 ## Voice Defaults
@@ -49,8 +48,6 @@ Supported initial runtime targets:
 
 - `win32-x64`
 - `linux-x64`
-- `darwin-x64`
-- `darwin-arm64`
 
 ## App Build
 
@@ -86,5 +83,4 @@ git tag v0.3.0
 git push origin v0.3.0
 ```
 
-Initial builds are unsigned. Windows/macOS signing and notarization are a
-separate hardening step.
+Initial Windows builds are unsigned. Code signing is a separate hardening step.
