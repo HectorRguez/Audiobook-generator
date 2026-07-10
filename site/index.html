@@ -75,6 +75,16 @@
       background: #1a1a1a;
       color: #f5f2eb;
     }
+    .local-note {
+      border-top: 1px solid #1a1a1a;
+      border-bottom: 1px solid #1a1a1a;
+      margin: 24px 0 0;
+      padding: 12px 0;
+    }
+    .local-note strong {
+      display: block;
+      font-size: 1.05em;
+    }
     audio {
       width: 100%;
       margin-top: 8px;
@@ -90,6 +100,10 @@
 <body>
   <h1>Audiobook Generator</h1>
   <p>Turn EPUB files into local audiobooks with bundled Spanish <a href="https://github.com/OHF-Voice/piper1-gpl">Piper</a> voices.</p>
+  <p class="local-note">
+    <strong>Completely local. Completely free.</strong>
+    Your books stay on your computer. No account, cloud upload, subscription, or per-minute fee.
+  </p>
 
   <h2>Downloads</h2>
   <div id="downloads"></div>
