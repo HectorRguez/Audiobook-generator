@@ -7,15 +7,18 @@ mod queue;
 mod repository;
 mod runtime;
 mod text;
+mod updates;
 
 use commands::*;
 use queue::QueueManager;
 use tauri::Manager;
+use updates::*;
 
 fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .setup(|app| {
             let manager = QueueManager::new(app.handle().clone())?;
             app.manage(manager);
@@ -24,6 +27,7 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             bootstrap_assets,
             cancel_job,
+            check_for_update,
             copy_generated_audio,
             delete_generated,
             delete_job,
@@ -33,6 +37,7 @@ fn main() {
             get_generated_playback_url,
             get_job,
             get_settings,
+            install_update,
             list_generated,
             list_jobs,
             list_voices,

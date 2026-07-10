@@ -35,5 +35,16 @@
     "resources": {
       "../runtime/dist": "runtime"
     }
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaW5pIHB1YmxpYyBrZXk6IEYxQ0M1REQwNDNGNkUzQUMKUldTczQvWkQwRjNNOGMwaUFaUFhxS0VTYTNYMzlLNzVJRWgxLzdjRy9vN3RYbEN5L2p3M0lnaWUK",
+      "endpoints": [
+        "https://github.com/HectorRguez/Audiobook-generator/releases/latest/download/latest.json"
+      ],
+      "windows": {
+        "installMode": "passive"
+      }
+    }
   }
 }

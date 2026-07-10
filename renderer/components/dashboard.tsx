@@ -40,6 +40,8 @@ import type {
   JobStatus,
   LogEvent,
   QueueJob,
+  UpdateInfo,
+  UpdateStatus,
   VoiceInfo
 } from "@/lib/contracts";
 import { createTauriApi, type DesktopApi } from "@/lib/tauri-api";
@@ -101,6 +103,12 @@ interface UiStrings {
   voiceLabel: string;
   selectedVoiceSummary: string;
   voiceLicenseLabel: string;
+  updateAvailable: string;
+  updateAction: string;
+  updateDownloading: string;
+  updateInstalling: string;
+  updateWaitForIdle: string;
+  updateFailed: string;
   gpuAccelerationLabel: string;
   gpuAccelerationEnabled: string;
   gpuAccelerationDisabled: string;
@@ -302,6 +310,12 @@ const UI_STRINGS: Record<UiLocale, UiStrings> = {
     voiceLabel: "Voice",
     selectedVoiceSummary: "Current voice: {voice}. This Spanish voice is tuned for long audiobook narration.",
     voiceLicenseLabel: "Model license",
+    updateAvailable: "Update {version} is available.",
+    updateAction: "Update and restart",
+    updateDownloading: "Downloading update...",
+    updateInstalling: "Installing update...",
+    updateWaitForIdle: "Pause or finish the active job before updating.",
+    updateFailed: "Update failed: {message}",
     gpuAccelerationLabel: "NVIDIA GPU acceleration",
     gpuAccelerationEnabled: "Enabled",
     gpuAccelerationDisabled: "Disabled",
@@ -373,6 +387,12 @@ const UI_STRINGS: Record<UiLocale, UiStrings> = {
     voiceLabel: "Voz",
     selectedVoiceSummary: "Voz actual: {voice}. Esta voz en espanol esta optimizada para narraciones largas de audiolibros.",
     voiceLicenseLabel: "Licencia del modelo",
+    updateAvailable: "La actualizacion {version} esta disponible.",
+    updateAction: "Actualizar y reiniciar",
+    updateDownloading: "Descargando actualizacion...",
+    updateInstalling: "Instalando actualizacion...",
+    updateWaitForIdle: "Pausa o termina el trabajo activo antes de actualizar.",
+    updateFailed: "La actualizacion fallo: {message}",
     gpuAccelerationLabel: "Aceleracion GPU NVIDIA",
     gpuAccelerationEnabled: "Activada",
     gpuAccelerationDisabled: "Desactivada",
@@ -544,6 +564,8 @@ export function Dashboard() {
   const [defaultVoiceId, setDefaultVoiceId] = useState("");
   const [useNvidiaGpu, setUseNvidiaGpu] = useState(false);
   const [settingsBusy, setSettingsBusy] = useState(false);
+  const [updateInfo, setUpdateInfo] = useState<UpdateInfo | null>(null);
+  const [updateStatus, setUpdateStatus] = useState<UpdateStatus | null>(null);
   const queueOrderIdsRef = useRef<string[]>([]);
   const queueContentRef = useRef<HTMLDivElement | null>(null);
   const generatedContentRef = useRef<HTMLDivElement | null>(null);
@@ -599,6 +621,13 @@ export function Dashboard() {
       setBridgeReady(true);
       void refresh();
       void refreshVoiceSettings(api);
+      void api.checkForUpdate().then((availableUpdate) => {
+        if (availableUpdate) {
+          setUpdateInfo(availableUpdate);
+        }
+      }).catch(() => {
+        // Startup and offline use should not be blocked by update checks.
+      });
 
       unsubs = [
         api.onQueueUpdated((payload) => setJobs(payload)),
@@ -607,6 +636,7 @@ export function Dashboard() {
           setJobDetails((current) => ({ ...current, [payload.id]: payload }));
         }),
         api.onBootstrapStatus((payload) => setBootstrapStatus(payload)),
+        api.onUpdateStatus((payload) => setUpdateStatus(payload)),
         api.onLogEvent((payload) => {
           setLogs((current) => [...current.slice(-200), payload]);
         })
@@ -708,6 +738,10 @@ export function Dashboard() {
   );
   const selectedVoiceName = selectedVoice ? displayVoiceName(selectedVoice) : "-";
   const selectedVoiceSummary = uiStrings.selectedVoiceSummary.replace("{voice}", selectedVoiceName);
+  const updateProgressValue = updateStatus?.phase === "downloading" && updateStatus.totalBytes
+    ? Math.min(100, Math.round(((updateStatus.downloadedBytes || 0) / updateStatus.totalBytes) * 100))
+    : null;
+  const isUpdating = updateStatus?.phase === "downloading" || updateStatus?.phase === "installing";
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -912,6 +946,29 @@ export function Dashboard() {
     }
   }
 
+  async function handleInstallUpdate() {
+    const api = getApi();
+    if (!api || !updateInfo || runningJob || isUpdating) {
+      return;
+    }
+
+    setUpdateStatus({
+      phase: "downloading",
+      version: updateInfo.version,
+      downloadedBytes: 0,
+      totalBytes: null
+    });
+    try {
+      await api.installUpdate();
+    } catch (error) {
+      setUpdateStatus({
+        phase: "error",
+        version: updateInfo.version,
+        message: error instanceof Error ? error.message : String(error)
+      });
+    }
+  }
+
   async function handleDeleteGenerated(outputId: string) {
     const api = getApi();
     if (!api) {
@@ -1013,6 +1070,43 @@ export function Dashboard() {
             </Button>
           </div>
         </header>
+
+        {updateInfo && (
+          <section className="flex flex-wrap items-center gap-3 border-y border-border/70 px-1 py-3">
+            <Download className="h-4 w-4 shrink-0 text-primary" />
+            <div className="min-w-[240px] flex-1">
+              <p className="text-sm font-medium">
+                {uiStrings.updateAvailable.replace("{version}", updateInfo.version)}
+              </p>
+              {runningJob && <p className="text-xs text-muted-foreground">{uiStrings.updateWaitForIdle}</p>}
+              {updateStatus?.phase === "downloading" && (
+                <p className="text-xs text-muted-foreground">
+                  {uiStrings.updateDownloading}
+                  {updateStatus.downloadedBytes !== null && updateStatus.downloadedBytes !== undefined
+                    ? ` ${formatFileSize(updateStatus.downloadedBytes)}`
+                    : ""}
+                  {updateStatus.totalBytes ? ` / ${formatFileSize(updateStatus.totalBytes)}` : ""}
+                </p>
+              )}
+              {updateStatus?.phase === "installing" && (
+                <p className="text-xs text-muted-foreground">{uiStrings.updateInstalling}</p>
+              )}
+              {updateStatus?.phase === "error" && (
+                <p className="text-xs text-destructive">
+                  {uiStrings.updateFailed.replace("{message}", updateStatus.message || "Unknown error")}
+                </p>
+              )}
+              {updateProgressValue !== null && <Progress className="mt-2 h-1.5" value={updateProgressValue} />}
+            </div>
+            <Button
+              size="sm"
+              onClick={() => void handleInstallUpdate()}
+              disabled={Boolean(runningJob) || isUpdating}
+            >
+              <Download className="h-4 w-4" /> {uiStrings.updateAction}
+            </Button>
+          </section>
+        )}
 
         <section className="grid min-h-0 flex-1 grid-cols-1 gap-4 xl:grid-cols-3">
           <Card

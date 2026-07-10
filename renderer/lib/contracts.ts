@@ -98,3 +98,18 @@ export interface VoiceInfo {
   usageNote?: string | null;
   attribution?: string | null;
 }
+
+export interface UpdateInfo {
+  currentVersion: string;
+  version: string;
+  notes?: string | null;
+  date?: string | null;
+}
+
+export interface UpdateStatus {
+  phase: "downloading" | "installing" | "error";
+  version?: string | null;
+  downloadedBytes?: number | null;
+  totalBytes?: number | null;
+  message?: string | null;
+}
