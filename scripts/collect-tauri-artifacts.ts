@@ -6,31 +6,26 @@ import path from "node:path";
 interface ArtifactFileSpec {
   extension: string;
   fileName: string;
+  updaterSignature?: boolean;
 }
 
 const ARTIFACT_SPECS: Record<string, ArtifactFileSpec[]> = {
   "win32-x64": [
     {
       extension: ".exe",
-      fileName: "Audiobook-Generator-windows-x64.exe"
+      fileName: "Audiobook-Generator-windows-x64.exe",
+      updaterSignature: true
     }
   ],
   "linux-x64": [
     {
       extension: ".deb",
       fileName: "Audiobook-Generator-linux-x64.deb"
-    }
-  ],
-  "darwin-x64": [
+    },
     {
-      extension: ".dmg",
-      fileName: "Audiobook-Generator-darwin-x64.dmg"
-    }
-  ],
-  "darwin-arm64": [
-    {
-      extension: ".dmg",
-      fileName: "Audiobook-Generator-darwin-arm64.dmg"
+      extension: ".AppImage",
+      fileName: "Audiobook-Generator-linux-x64.AppImage",
+      updaterSignature: true
     }
   ]
 };
@@ -79,6 +74,7 @@ async function main(): Promise<void> {
   const target = parseArg("target");
   const bundleRoot = parseArg("bundle-root", path.join("src-tauri", "target", "release", "bundle"));
   const outDir = parseArg("out", "dist-upload");
+  const skipSignatures = process.argv.includes("--skip-signatures");
   const specs = ARTIFACT_SPECS[target];
   if (!specs) {
     throw new Error(`Unsupported artifact target: ${target}`);
@@ -103,6 +99,16 @@ async function main(): Promise<void> {
     const hash = await sha256File(destination);
     checksumLines.push(`${hash}  ${spec.fileName}`);
     console.log(`Collected ${source} -> ${destination}`);
+
+    if (spec.updaterSignature && !skipSignatures) {
+      const signatureSource = `${source}.sig`;
+      if (!fsSync.existsSync(signatureSource)) {
+        throw new Error(`No updater signature found at ${signatureSource}`);
+      }
+      const signatureDestination = `${destination}.sig`;
+      await fs.copyFile(signatureSource, signatureDestination);
+      console.log(`Collected ${signatureSource} -> ${signatureDestination}`);
+    }
   }
 
   await fs.writeFile(

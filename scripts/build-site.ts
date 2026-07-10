@@ -7,6 +7,7 @@ interface DownloadsMetadata {
     label: string;
     file: string;
     url: string;
+    description: string;
   }>;
   voices: Array<{
     id: string;
@@ -38,6 +39,7 @@ function validateDownloadsJson(value: unknown): asserts value is DownloadsMetada
     assertNonEmptyString(platform.label, `platforms[${index}].label`);
     assertNonEmptyString(platform.file, `platforms[${index}].file`);
     assertNonEmptyString(platform.url, `platforms[${index}].url`);
+    assertNonEmptyString(platform.description, `platforms[${index}].description`);
   }
   if (!Array.isArray(metadata.voices) || metadata.voices.length === 0) {
     throw new Error("site/downloads.json voices must be a non-empty array");
