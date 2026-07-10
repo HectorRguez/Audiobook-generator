@@ -300,6 +300,46 @@ async function installPiper(pythonExe: string, target: string): Promise<void> {
   await run(pythonExe, ["-m", "pip", "install", "piper-tts[http]==1.4.2"]);
 }
 
+async function pruneUnusedPythonComponents(pythonRoot: string): Promise<void> {
+  const removableNames = [
+    /^_crypt(?:\.|$)/i,
+    /^_tkinter(?:\.|$)/i,
+    /^idlelib$/i,
+    /^itcl\d/i,
+    /^libtcl/i,
+    /^libtk/i,
+    /^tcl\d/i,
+    /^thread\d/i,
+    /^tk\d/i,
+    /^tkinter$/i,
+    /^turtledemo$/i
+  ];
+  async function findRemovablePaths(directory: string, matches: string[]): Promise<void> {
+    const entries = await fs.readdir(directory, { withFileTypes: true });
+    for (const entry of entries) {
+      const fullPath = path.join(directory, entry.name);
+      if (removableNames.some((pattern) => pattern.test(entry.name))) {
+        matches.push(fullPath);
+      } else if (entry.isDirectory()) {
+        await findRemovablePaths(fullPath, matches);
+      }
+    }
+  }
+
+  const removablePaths: string[] = [];
+  await findRemovablePaths(pythonRoot, removablePaths);
+  removablePaths.sort((left, right) => right.length - left.length);
+  for (const removablePath of removablePaths) {
+    await fs.rm(removablePath, { recursive: true, force: true });
+  }
+
+  const remainingPaths: string[] = [];
+  await findRemovablePaths(pythonRoot, remainingPaths);
+  if (remainingPaths.length > 0) {
+    throw new Error(`Failed to remove unused Python components: ${remainingPaths.join(", ")}`);
+  }
+}
+
 const SKIPPED_LINUX_LIBS = [
   "ld-linux",
   "libBrokenLocale.so",
@@ -382,6 +422,7 @@ async function main(): Promise<void> {
   const pythonExeRelative = await findPythonExe(outRoot, target);
   const pythonExe = path.resolve(outRoot, pythonExeRelative);
   await installPiper(pythonExe, target);
+  await pruneUnusedPythonComponents(path.join(outRoot, "python"));
 
   const ffmpegDir = path.join(outRoot, "ffmpeg");
   const ffmpegSource = await copyTool("ffmpeg", "FFMPEG_BIN", path.join(ffmpegDir, process.platform === "win32" ? "ffmpeg.exe" : "ffmpeg"));
