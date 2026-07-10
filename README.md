@@ -91,14 +91,40 @@ compact headings, dot bullets, and outlined download links. Binaries are not
 stored in Pages; the page links to GitHub Release assets through
 `releases/latest/download/...`.
 
+## Automatic Updates
+
+The desktop app checks
+`https://github.com/HectorRguez/Audiobook-generator/releases/latest/download/latest.json`
+when it starts. If a newer signed release is available, the app shows an update
+band with download progress and installs it after user confirmation. Updating is
+disabled while an audiobook job is active so a restart cannot interrupt work.
+
+Windows NSIS and Linux AppImage builds support in-app installation. The Linux
+`.deb` remains available as a conventional package, but it must be updated
+manually. GitHub Actions artifacts are test builds and do not trigger installed
+apps; only tagged GitHub Releases are used as the stable public update channel.
+
 ## Release Flow
 
 Pushes to `main` build and upload workflow artifacts, then deploy Pages. Tags
-matching `v*` build the same platform matrix and publish GitHub Release assets.
+matching `v*` build the Windows/Linux matrix, publish GitHub Release assets, and
+publish the signed `latest.json` updater manifest. The tag version is injected
+into the packaged app during CI.
 
 ```bash
-git tag v0.3.0
-git push origin v0.3.0
+git tag v0.3.1
+git push origin v0.3.1
 ```
 
 Initial Windows builds are unsigned. Code signing is a separate hardening step.
+Updater packages are still cryptographically signed with Tauri's dedicated
+update key. The required GitHub Actions secrets are:
+
+- `TAURI_SIGNING_PRIVATE_KEY`
+- `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`
+
+The current private key and password have protected local backups at
+`~/.tauri/audiobook-generator.key` and
+`~/.tauri/audiobook-generator.key.password`. Back up both files in a secure
+secret store. Losing either prevents publishing updates that existing installs
+will accept; neither file belongs in Git.
