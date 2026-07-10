@@ -12,6 +12,10 @@ interface DownloadsMetadata {
     id: string;
     name: string;
     demoUrl: string;
+    licenseName: string;
+    licenseUrl: string;
+    sourceUrl: string;
+    usageNote: string;
   }>;
 }
 
@@ -42,6 +46,10 @@ function validateDownloadsJson(value: unknown): asserts value is DownloadsMetada
     assertNonEmptyString(voice.id, `voices[${index}].id`);
     assertNonEmptyString(voice.name, `voices[${index}].name`);
     assertNonEmptyString(voice.demoUrl, `voices[${index}].demoUrl`);
+    assertNonEmptyString(voice.licenseName, `voices[${index}].licenseName`);
+    assertNonEmptyString(voice.licenseUrl, `voices[${index}].licenseUrl`);
+    assertNonEmptyString(voice.sourceUrl, `voices[${index}].sourceUrl`);
+    assertNonEmptyString(voice.usageNote, `voices[${index}].usageNote`);
   }
 }
 

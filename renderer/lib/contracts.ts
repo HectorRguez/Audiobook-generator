@@ -90,4 +90,11 @@ export interface VoiceInfo {
   locale?: string;
   speaker?: string;
   quality?: string;
+  sourceUrl?: string | null;
+  modelCardUrl?: string | null;
+  licenseId?: string | null;
+  licenseName?: string | null;
+  licenseUrl?: string | null;
+  usageNote?: string | null;
+  attribution?: string | null;
 }

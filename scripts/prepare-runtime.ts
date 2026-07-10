@@ -12,6 +12,13 @@ interface VoiceDefinition {
   sampleRate: number;
   modelUrl: string;
   configUrl: string;
+  sourceUrl: string;
+  modelCardUrl: string;
+  licenseId: string;
+  licenseName: string;
+  licenseUrl: string;
+  usageNote: string;
+  attribution: string;
 }
 
 interface PythonAssetSelection {
@@ -27,6 +34,54 @@ const TARGET_TRIPLES: Record<string, string> = {
   "darwin-arm64": "aarch64-apple-darwin",
   "linux-arm64": "aarch64-unknown-linux-gnu"
 };
+
+const PIPER_VERSION = "1.4.2";
+const PIPER_SOURCE_URL = `https://github.com/OHF-Voice/piper1-gpl/archive/refs/tags/v${PIPER_VERSION}.tar.gz`;
+const VOICE_STRING_FIELDS: Array<keyof VoiceDefinition> = [
+  "id",
+  "name",
+  "locale",
+  "quality",
+  "modelUrl",
+  "configUrl",
+  "sourceUrl",
+  "modelCardUrl",
+  "licenseId",
+  "licenseName",
+  "licenseUrl",
+  "usageNote",
+  "attribution"
+];
+
+function parseVoiceDefinitions(value: unknown): VoiceDefinition[] {
+  if (!value || typeof value !== "object" || !Array.isArray((value as { voices?: unknown }).voices)) {
+    throw new Error("runtime/voices.json must contain a voices array.");
+  }
+
+  const voices = (value as { voices: unknown[] }).voices;
+  for (const [index, candidate] of voices.entries()) {
+    if (!candidate || typeof candidate !== "object") {
+      throw new Error(`runtime/voices.json voices[${index}] must be an object.`);
+    }
+    const voice = candidate as Partial<VoiceDefinition>;
+    for (const field of VOICE_STRING_FIELDS) {
+      if (typeof voice[field] !== "string" || (voice[field] as string).trim() === "") {
+        throw new Error(`runtime/voices.json voices[${index}].${field} must be a non-empty string.`);
+      }
+    }
+    if (!Number.isInteger(voice.sampleRate) || (voice.sampleRate || 0) <= 0) {
+      throw new Error(`runtime/voices.json voices[${index}].sampleRate must be a positive integer.`);
+    }
+    if (voice.licenseId !== "LicenseRef-Public-Domain") {
+      const licensePath = path.join("runtime", "licenses", `${voice.licenseId}.txt`);
+      if (!fsSync.existsSync(licensePath)) {
+        throw new Error(`Missing bundled license text for ${voice.id}: ${licensePath}`);
+      }
+    }
+  }
+
+  return voices as VoiceDefinition[];
+}
 
 function parseArg(name: string, fallback?: string): string {
   const prefix = `--${name}=`;
@@ -333,9 +388,11 @@ async function main(): Promise<void> {
   const ffprobeSource = await copyTool("ffprobe", "FFPROBE_BIN", path.join(ffmpegDir, process.platform === "win32" ? "ffprobe.exe" : "ffprobe"));
   await copyLinuxFfmpegLibraries([ffmpegSource, ffprobeSource], ffmpegDir);
 
-  const voicesConfig = JSON.parse(await fs.readFile(path.join("runtime", "voices.json"), "utf8")) as { voices: VoiceDefinition[] };
+  const voicesConfig = parseVoiceDefinitions(
+    JSON.parse(await fs.readFile(path.join("runtime", "voices.json"), "utf8")) as unknown
+  );
   const manifestVoices = [];
-  for (const voice of voicesConfig.voices) {
+  for (const voice of voicesConfig) {
     const modelPath = path.join("voices", `${voice.id}.onnx`);
     const configPath = path.join("voices", `${voice.id}.onnx.json`);
     await download(voice.modelUrl, path.join(outRoot, modelPath));
@@ -347,15 +404,42 @@ async function main(): Promise<void> {
       quality: voice.quality,
       modelPath,
       configPath,
-      sampleRate: voice.sampleRate
+      sampleRate: voice.sampleRate,
+      sourceUrl: voice.sourceUrl,
+      modelCardUrl: voice.modelCardUrl,
+      licenseId: voice.licenseId,
+      licenseName: voice.licenseName,
+      licenseUrl: voice.licenseUrl,
+      usageNote: voice.usageNote,
+      attribution: voice.attribution
     });
   }
+
+  const licensesDir = path.join(outRoot, "licenses");
+  await fs.cp(path.join("runtime", "licenses"), licensesDir, { recursive: true });
+  await download(
+    PIPER_SOURCE_URL,
+    path.join(licensesDir, "source", `piper1-gpl-${PIPER_VERSION}.tar.gz`)
+  );
+  await fs.writeFile(
+    path.join(outRoot, "THIRD_PARTY_NOTICES.txt"),
+    [
+      `Piper ${PIPER_VERSION} is licensed under GPL-3.0.`,
+      `Source: https://github.com/OHF-Voice/piper1-gpl/tree/v${PIPER_VERSION}`,
+      `Corresponding source archive: licenses/source/piper1-gpl-${PIPER_VERSION}.tar.gz`,
+      "License text: licenses/PIPER-GPL-3.0.txt",
+      "Voice models have separate terms. See licenses/VOICE_MODELS.md and runtime-manifest.json.",
+      "FFmpeg/ffprobe are copied from the build environment or configured FFMPEG_BIN/FFPROBE_BIN.",
+      "Linux FFmpeg shared libraries are copied into ffmpeg/lib when the source tools are dynamically linked."
+    ].join("\n"),
+    "utf8"
+  );
 
   const manifestBase = {
     target,
     pythonVersion: "unknown",
     pythonBuildStandaloneVersion: pythonAsset.pythonBuildStandaloneVersion,
-    piperVersion: "1.4.2",
+    piperVersion: PIPER_VERSION,
     runtimeSha256: "",
     pythonExe: pythonExeRelative,
     piperServerEntrypoint: "piper.http_server",
@@ -367,16 +451,6 @@ async function main(): Promise<void> {
   await fs.writeFile(
     path.join(outRoot, "runtime-manifest.json"),
     JSON.stringify({ ...manifestBase, runtimeSha256 }, null, 2),
-    "utf8"
-  );
-  await fs.writeFile(
-    path.join(outRoot, "THIRD_PARTY_NOTICES.txt"),
-    [
-      "Bundled runtime includes python-build-standalone and piper-tts[http]==1.4.2.",
-      "Voice model licenses are inherited from their upstream model repositories.",
-      "FFmpeg/ffprobe are copied from the build environment or configured FFMPEG_BIN/FFPROBE_BIN.",
-      "Linux FFmpeg shared libraries are copied into ffmpeg/lib when the source tools are dynamically linked."
-    ].join("\n"),
     "utf8"
   );
   console.log(`Prepared runtime bundle at ${outRoot}`);

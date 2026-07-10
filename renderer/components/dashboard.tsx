@@ -100,6 +100,7 @@ interface UiStrings {
   languageEnglish: string;
   voiceLabel: string;
   selectedVoiceSummary: string;
+  voiceLicenseLabel: string;
   gpuAccelerationLabel: string;
   gpuAccelerationEnabled: string;
   gpuAccelerationDisabled: string;
@@ -300,6 +301,7 @@ const UI_STRINGS: Record<UiLocale, UiStrings> = {
     languageEnglish: "English",
     voiceLabel: "Voice",
     selectedVoiceSummary: "Current voice: {voice}. This Spanish voice is tuned for long audiobook narration.",
+    voiceLicenseLabel: "Model license",
     gpuAccelerationLabel: "NVIDIA GPU acceleration",
     gpuAccelerationEnabled: "Enabled",
     gpuAccelerationDisabled: "Disabled",
@@ -370,6 +372,7 @@ const UI_STRINGS: Record<UiLocale, UiStrings> = {
     languageEnglish: "Ingles",
     voiceLabel: "Voz",
     selectedVoiceSummary: "Voz actual: {voice}. Esta voz en espanol esta optimizada para narraciones largas de audiolibros.",
+    voiceLicenseLabel: "Licencia del modelo",
     gpuAccelerationLabel: "Aceleracion GPU NVIDIA",
     gpuAccelerationEnabled: "Activada",
     gpuAccelerationDisabled: "Desactivada",
@@ -1317,6 +1320,12 @@ export function Dashboard() {
                   </SelectContent>
                 </Select>
                 <p className="text-xs text-muted-foreground">{selectedVoiceSummary}</p>
+                {selectedVoice?.licenseName && (
+                  <p className="text-xs text-muted-foreground">
+                    {uiStrings.voiceLicenseLabel}: {selectedVoice.licenseName}
+                    {selectedVoice.usageNote ? ` - ${selectedVoice.usageNote}` : ""}
+                  </p>
+                )}
               </div>
               <div className="space-y-2">
                 <label htmlFor="gpu-acceleration" className="text-xs font-medium uppercase tracking-wide text-muted-foreground">

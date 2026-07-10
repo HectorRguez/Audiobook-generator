@@ -22,6 +22,24 @@ Python runtime running `piper-tts[http]==1.4.2`.
 The bundled runtime manifest carries a curated `es_ES` voice set and uses
 `es_ES-carlfm-high` as the default voice.
 
+## Licensing
+
+The bundled [Piper 1.4.2](https://github.com/OHF-Voice/piper1-gpl/tree/v1.4.2)
+runtime is licensed under GPL-3.0. Its license text and corresponding source
+archive are included in every packaged runtime.
+
+Voice models have separate terms:
+
+- `es_ES-carlfm-high`: public domain.
+- `es_ES-davefx-medium`: CC0 1.0.
+- `es_ES-sharvard-medium`: CC BY 3.0; attribution is included.
+- `es_ES-miro-high`: CC BY-NC-SA 4.0; non-commercial use only.
+
+Full source links, attribution, change notices, and license texts are in
+[`runtime/licenses/VOICE_MODELS.md`](runtime/licenses/VOICE_MODELS.md).
+`es_ES-glados-medium` is intentionally not bundled because its upstream model
+repository does not declare a model license.
+
 ## Development
 
 ```bash

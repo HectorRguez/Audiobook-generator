@@ -6,8 +6,15 @@
       "locale": "es_ES",
       "quality": "high",
       "sampleRate": 22050,
-      "modelUrl": "https://huggingface.co/friyin/vits-piper-es_ES-carlfm-high/resolve/main/es_ES-carlfm-high.onnx?download=true",
-      "configUrl": "https://huggingface.co/friyin/vits-piper-es_ES-carlfm-high/resolve/main/es_ES-carlfm-high.onnx.json?download=true"
+      "modelUrl": "https://huggingface.co/friyin/vits-piper-es_ES-carlfm-high/resolve/901b4e5482d44f38086d05104c5f61d9b70526e9/es_ES-carlfm-high.onnx?download=true",
+      "configUrl": "https://huggingface.co/friyin/vits-piper-es_ES-carlfm-high/resolve/901b4e5482d44f38086d05104c5f61d9b70526e9/es_ES-carlfm-high.onnx.json?download=true",
+      "sourceUrl": "https://huggingface.co/friyin/vits-piper-es_ES-carlfm-high/tree/901b4e5482d44f38086d05104c5f61d9b70526e9",
+      "modelCardUrl": "https://huggingface.co/friyin/vits-piper-es_ES-carlfm-high/blob/901b4e5482d44f38086d05104c5f61d9b70526e9/MODEL_CARD",
+      "licenseId": "LicenseRef-Public-Domain",
+      "licenseName": "Public domain",
+      "licenseUrl": "https://huggingface.co/friyin/vits-piper-es_ES-carlfm-high/blob/901b4e5482d44f38086d05104c5f61d9b70526e9/MODEL_CARD",
+      "usageNote": "No additional use restriction is stated by the model card.",
+      "attribution": "Carlfm voice model trained by Daniel Fernandez (friyin) from the carlfm01/my-speech-datasets public-domain dataset."
     },
     {
       "id": "es_ES-davefx-medium",
@@ -15,8 +22,15 @@
       "locale": "es_ES",
       "quality": "medium",
       "sampleRate": 22050,
-      "modelUrl": "https://huggingface.co/rhasspy/piper-voices/resolve/main/es/es_ES/davefx/medium/es_ES-davefx-medium.onnx?download=true",
-      "configUrl": "https://huggingface.co/rhasspy/piper-voices/resolve/main/es/es_ES/davefx/medium/es_ES-davefx-medium.onnx.json?download=true"
+      "modelUrl": "https://huggingface.co/rhasspy/piper-voices/resolve/e21c7de8d4eab79b902f0d61e662b3f21664b8d2/es/es_ES/davefx/medium/es_ES-davefx-medium.onnx?download=true",
+      "configUrl": "https://huggingface.co/rhasspy/piper-voices/resolve/e21c7de8d4eab79b902f0d61e662b3f21664b8d2/es/es_ES/davefx/medium/es_ES-davefx-medium.onnx.json?download=true",
+      "sourceUrl": "https://huggingface.co/rhasspy/piper-voices/tree/e21c7de8d4eab79b902f0d61e662b3f21664b8d2/es/es_ES/davefx/medium",
+      "modelCardUrl": "https://huggingface.co/rhasspy/piper-voices/blob/e21c7de8d4eab79b902f0d61e662b3f21664b8d2/es/es_ES/davefx/medium/MODEL_CARD",
+      "licenseId": "CC0-1.0",
+      "licenseName": "CC0 1.0",
+      "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "usageNote": "No attribution is required; the source is disclosed for provenance.",
+      "attribution": "Davefx Piper voice from OHF-Voice/voice-datasets, finetuned from the U.S. English lessac medium voice."
     },
     {
       "id": "es_ES-sharvard-medium",
@@ -24,17 +38,15 @@
       "locale": "es_ES",
       "quality": "medium",
       "sampleRate": 22050,
-      "modelUrl": "https://huggingface.co/rhasspy/piper-voices/resolve/main/es/es_ES/sharvard/medium/es_ES-sharvard-medium.onnx?download=true",
-      "configUrl": "https://huggingface.co/rhasspy/piper-voices/resolve/main/es/es_ES/sharvard/medium/es_ES-sharvard-medium.onnx.json?download=true"
-    },
-    {
-      "id": "es_ES-glados-medium",
-      "name": "Glados",
-      "locale": "es_ES",
-      "quality": "medium",
-      "sampleRate": 22050,
-      "modelUrl": "https://huggingface.co/csukuangfj/vits-piper-es_ES-glados-medium/resolve/main/es_ES-glados-medium.onnx?download=true",
-      "configUrl": "https://huggingface.co/csukuangfj/vits-piper-es_ES-glados-medium/resolve/main/es_ES-glados-medium.onnx.json?download=true"
+      "modelUrl": "https://huggingface.co/rhasspy/piper-voices/resolve/e21c7de8d4eab79b902f0d61e662b3f21664b8d2/es/es_ES/sharvard/medium/es_ES-sharvard-medium.onnx?download=true",
+      "configUrl": "https://huggingface.co/rhasspy/piper-voices/resolve/e21c7de8d4eab79b902f0d61e662b3f21664b8d2/es/es_ES/sharvard/medium/es_ES-sharvard-medium.onnx.json?download=true",
+      "sourceUrl": "https://huggingface.co/rhasspy/piper-voices/tree/e21c7de8d4eab79b902f0d61e662b3f21664b8d2/es/es_ES/sharvard/medium",
+      "modelCardUrl": "https://huggingface.co/rhasspy/piper-voices/blob/e21c7de8d4eab79b902f0d61e662b3f21664b8d2/es/es_ES/sharvard/medium/MODEL_CARD",
+      "licenseId": "CC-BY-3.0",
+      "licenseName": "CC BY 3.0",
+      "licenseUrl": "https://creativecommons.org/licenses/by/3.0/",
+      "usageNote": "Attribution is required.",
+      "attribution": "Mayo, C.; Cooke, M.; Aubanel, V.; Garcia Lecumberri, M. L. (2013). Sharvard. Edinburgh DataShare. https://doi.org/10.7488/ds/133. The Piper model is a finetuned ONNX model and is redistributed unchanged by Audiobook Generator."
     },
     {
       "id": "es_ES-miro-high",
@@ -42,8 +54,15 @@
       "locale": "es_ES",
       "quality": "high",
       "sampleRate": 22050,
-      "modelUrl": "https://huggingface.co/csukuangfj/vits-piper-es_ES-miro-high/resolve/main/es_ES-miro-high.onnx?download=true",
-      "configUrl": "https://huggingface.co/csukuangfj/vits-piper-es_ES-miro-high/resolve/main/es_ES-miro-high.onnx.json?download=true"
+      "modelUrl": "https://huggingface.co/csukuangfj/vits-piper-es_ES-miro-high/resolve/0e1f773561429a9e50fa23d868a40eb341ad83c4/es_ES-miro-high.onnx?download=true",
+      "configUrl": "https://huggingface.co/csukuangfj/vits-piper-es_ES-miro-high/resolve/0e1f773561429a9e50fa23d868a40eb341ad83c4/es_ES-miro-high.onnx.json?download=true",
+      "sourceUrl": "https://huggingface.co/csukuangfj/vits-piper-es_ES-miro-high/tree/0e1f773561429a9e50fa23d868a40eb341ad83c4",
+      "modelCardUrl": "https://huggingface.co/csukuangfj/vits-piper-es_ES-miro-high/blob/0e1f773561429a9e50fa23d868a40eb341ad83c4/README.md",
+      "licenseId": "CC-BY-NC-SA-4.0",
+      "licenseName": "CC BY-NC-SA 4.0",
+      "licenseUrl": "https://creativecommons.org/licenses/by-nc-sa/4.0/",
+      "usageNote": "Non-commercial use only; adaptations must use the same license.",
+      "attribution": "Miro Spanish Piper model converted from OpenVoiceOS/pipertts_es-ES_miro and trained with TigreGotico/tts-train-synthetic-miro_es-ES. Redistributed unchanged by Audiobook Generator."
     }
   ]
 }

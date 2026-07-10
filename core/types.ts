@@ -75,6 +75,13 @@ export interface VoiceInfo {
   locale?: string;
   speaker?: string;
   quality?: "x_low" | "low" | "medium" | "high" | string;
+  sourceUrl?: string | null;
+  modelCardUrl?: string | null;
+  licenseId?: string | null;
+  licenseName?: string | null;
+  licenseUrl?: string | null;
+  usageNote?: string | null;
+  attribution?: string | null;
 }
 
 export interface BootstrapStatus {

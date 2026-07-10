@@ -13,10 +13,41 @@
     }
   ],
   "voices": [
-    { "id": "es_ES-carlfm-high", "name": "Carlfm", "demoUrl": "voice-demos/es_ES-carlfm-high.mp3" },
-    { "id": "es_ES-davefx-medium", "name": "Davefx", "demoUrl": "voice-demos/es_ES-davefx-medium.mp3" },
-    { "id": "es_ES-sharvard-medium", "name": "Sharvard", "demoUrl": "voice-demos/es_ES-sharvard-medium.mp3" },
-    { "id": "es_ES-glados-medium", "name": "Glados", "demoUrl": "voice-demos/es_ES-glados-medium.mp3" },
-    { "id": "es_ES-miro-high", "name": "Miro", "demoUrl": "voice-demos/es_ES-miro-high.mp3" }
+    {
+      "id": "es_ES-carlfm-high",
+      "name": "Carlfm",
+      "demoUrl": "voice-demos/es_ES-carlfm-high.mp3",
+      "licenseName": "Public domain",
+      "licenseUrl": "https://huggingface.co/friyin/vits-piper-es_ES-carlfm-high/blob/901b4e5482d44f38086d05104c5f61d9b70526e9/MODEL_CARD",
+      "sourceUrl": "https://huggingface.co/friyin/vits-piper-es_ES-carlfm-high/tree/901b4e5482d44f38086d05104c5f61d9b70526e9",
+      "usageNote": "No additional use restriction stated."
+    },
+    {
+      "id": "es_ES-davefx-medium",
+      "name": "Davefx",
+      "demoUrl": "voice-demos/es_ES-davefx-medium.mp3",
+      "licenseName": "CC0 1.0",
+      "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "sourceUrl": "https://huggingface.co/rhasspy/piper-voices/blob/e21c7de8d4eab79b902f0d61e662b3f21664b8d2/es/es_ES/davefx/medium/MODEL_CARD",
+      "usageNote": "No attribution required."
+    },
+    {
+      "id": "es_ES-sharvard-medium",
+      "name": "Sharvard",
+      "demoUrl": "voice-demos/es_ES-sharvard-medium.mp3",
+      "licenseName": "CC BY 3.0",
+      "licenseUrl": "https://creativecommons.org/licenses/by/3.0/",
+      "sourceUrl": "https://huggingface.co/rhasspy/piper-voices/blob/e21c7de8d4eab79b902f0d61e662b3f21664b8d2/es/es_ES/sharvard/medium/MODEL_CARD",
+      "usageNote": "Attribution required."
+    },
+    {
+      "id": "es_ES-miro-high",
+      "name": "Miro",
+      "demoUrl": "voice-demos/es_ES-miro-high.mp3",
+      "licenseName": "CC BY-NC-SA 4.0",
+      "licenseUrl": "https://creativecommons.org/licenses/by-nc-sa/4.0/",
+      "sourceUrl": "https://huggingface.co/csukuangfj/vits-piper-es_ES-miro-high/tree/0e1f773561429a9e50fa23d868a40eb341ad83c4",
+      "usageNote": "Non-commercial use only; share alike."
+    }
   ]
 }

@@ -135,6 +135,13 @@ pub struct VoiceInfo {
     pub locale: Option<String>,
     pub speaker: Option<String>,
     pub quality: Option<String>,
+    pub source_url: Option<String>,
+    pub model_card_url: Option<String>,
+    pub license_id: Option<String>,
+    pub license_name: Option<String>,
+    pub license_url: Option<String>,
+    pub usage_note: Option<String>,
+    pub attribution: Option<String>,
 }
 
 #[derive(Debug, Clone)]

@@ -33,6 +33,13 @@ pub struct VoiceAsset {
     pub model_path: String,
     pub config_path: String,
     pub sample_rate: Option<u32>,
+    pub source_url: Option<String>,
+    pub model_card_url: Option<String>,
+    pub license_id: Option<String>,
+    pub license_name: Option<String>,
+    pub license_url: Option<String>,
+    pub usage_note: Option<String>,
+    pub attribution: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -60,6 +67,13 @@ pub struct ResolvedVoiceAsset {
     pub model_path: PathBuf,
     pub config_path: PathBuf,
     pub sample_rate: Option<u32>,
+    pub source_url: Option<String>,
+    pub model_card_url: Option<String>,
+    pub license_id: Option<String>,
+    pub license_name: Option<String>,
+    pub license_url: Option<String>,
+    pub usage_note: Option<String>,
+    pub attribution: Option<String>,
 }
 
 impl RuntimeAssets {
@@ -81,6 +95,13 @@ impl RuntimeAssets {
                 locale: Some(voice.locale.clone()),
                 speaker: voice.id.split('-').nth(1).map(|value| value.to_string()),
                 quality: Some(voice.quality.clone()),
+                source_url: voice.source_url.clone(),
+                model_card_url: voice.model_card_url.clone(),
+                license_id: voice.license_id.clone(),
+                license_name: voice.license_name.clone(),
+                license_url: voice.license_url.clone(),
+                usage_note: voice.usage_note.clone(),
+                attribution: voice.attribution.clone(),
             })
             .collect()
     }
@@ -160,6 +181,13 @@ pub fn load_manifest(root_dir: &Path, manifest_path: &Path) -> Result<RuntimeAss
                 model_path: root_dir.join(&voice.model_path),
                 config_path: root_dir.join(&voice.config_path),
                 sample_rate: voice.sample_rate,
+                source_url: voice.source_url.clone(),
+                model_card_url: voice.model_card_url.clone(),
+                license_id: voice.license_id.clone(),
+                license_name: voice.license_name.clone(),
+                license_url: voice.license_url.clone(),
+                usage_note: voice.usage_note.clone(),
+                attribution: voice.attribution.clone(),
             })
             .collect(),
     };
