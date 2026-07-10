@@ -59,6 +59,10 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Set tagged release version
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: npm version ${{ github.ref_name }} --no-git-tag-version --allow-same-version
+
       - name: Typecheck
         run: npm run typecheck
 
@@ -120,6 +124,14 @@ jobs:
           path: voice-demos/*
           if-no-files-found: error
 
+      - name: Upload updater signatures
+        if: github.event_name != 'pull_request'
+        uses: actions/upload-artifact@v4
+        with:
+          name: updater-signatures-${{ matrix.target }}
+          path: dist-upload/*.sig
+          if-no-files-found: error
+
       - name: Publish release assets
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
@@ -128,6 +140,44 @@ jobs:
           generate_release_notes: true
           fail_on_unmatched_files: true
           files: dist-upload/*
+
+  updater-manifest:
+    name: Publish updater manifest
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Download updater signatures
+        uses: actions/download-artifact@v4
+        with:
+          pattern: updater-signatures-*
+          path: updater-signatures
+          merge-multiple: true
+
+      - name: Build updater manifest
+        run: npm run build:updater-manifest -- --tag ${{ github.ref_name }} --assets updater-signatures --out updater-signatures/latest.json
+
+      - name: Publish updater manifest
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          fail_on_unmatched_files: true
+          files: updater-signatures/latest.json
 
   pages:
     name: GitHub Pages

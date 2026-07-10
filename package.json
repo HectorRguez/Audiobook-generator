@@ -1,6 +1,6 @@
 {
   "name": "audiobook-generator",
-  "version": "0.1.0",
+  "version": "0.3.1",
   "private": true,
   "scripts": {
     "build:scripts": "tsc -p tsconfig.scripts.build.json",
@@ -14,6 +14,7 @@
     "smoke:runtime": "node --import tsx scripts/smoke-runtime.ts",
     "build:voice-demos": "node --import tsx scripts/generate-voice-demos.ts",
     "collect:tauri-artifacts": "node --import tsx scripts/collect-tauri-artifacts.ts",
+    "build:updater-manifest": "node --import tsx scripts/build-updater-manifest.ts",
     "build:site": "node --import tsx scripts/build-site.ts",
     "lint": "cd renderer && next lint",
     "test": "node --import tsx --test \"core/**/*.test.ts\"",
