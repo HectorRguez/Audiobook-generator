@@ -155,16 +155,6 @@ impl QueueManager {
         self.emit_job(&job.id);
 
         let runtime = Arc::clone(&self.runtime);
-        let voice_id = if runtime.voice(&job.voice_id).is_some() {
-            job.voice_id.clone()
-        } else {
-            runtime
-                .default_voice_id()
-                .ok_or_else(|| anyhow!("Runtime has no voices."))?
-        };
-        let voice = runtime
-            .voice(&voice_id)
-            .ok_or_else(|| anyhow!("Voice not found: {voice_id}"))?;
         let app_data = self.app.path().app_data_dir()?;
         let work_dir = app_data.join("work").join(&job.id);
         fs::create_dir_all(&work_dir)?;
@@ -183,6 +173,24 @@ impl QueueManager {
         job.title = extraction.title;
         job.author = extraction.author;
         job.total_chars = extraction.total_chars;
+
+        let preferred_voice_id = if runtime.voice(&job.voice_id).is_some() {
+            job.voice_id.clone()
+        } else {
+            runtime
+                .default_voice_id()
+                .ok_or_else(|| anyhow!("Runtime has no Spanish voices."))?
+        };
+        let voice = runtime
+            .narration_voice(&preferred_voice_id, &extraction.language)
+            .ok_or_else(|| anyhow!("No bundled voice supports {}.", extraction.language))?;
+        self.repo().update_job_voice(&job.id, &voice.id)?;
+        job.voice_id = voice.id.clone();
+        self.log(
+            &job.id,
+            "info",
+            &format!("Starting job processing with voice {} (CPU).", voice.name),
+        );
         self.emit_job(&job.id);
 
         let chapters = self.repo().list_chapters(&job.id)?;

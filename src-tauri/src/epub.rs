@@ -11,6 +11,7 @@ use std::{
 };
 use zip::ZipArchive;
 
+use crate::language::resolve_narration_language;
 use crate::models::{ChapterExtraction, EpubExtractionResult};
 use crate::text::normalize_text;
 
@@ -24,6 +25,7 @@ struct ManifestItem {
 struct ParsedOpf {
     title: String,
     author: Option<String>,
+    language: Option<String>,
     manifest: HashMap<String, ManifestItem>,
     spine: Vec<String>,
 }
@@ -69,6 +71,7 @@ fn parse_opf(opf: &str) -> Result<ParsedOpf> {
     reader.config_mut().trim_text(true);
     let mut title = String::new();
     let mut author = None;
+    let mut language = None;
     let mut current_text_tag: Option<String> = None;
     let mut manifest = HashMap::new();
     let mut spine = Vec::new();
@@ -77,7 +80,10 @@ fn parse_opf(opf: &str) -> Result<ParsedOpf> {
         match reader.read_event()? {
             Event::Start(event) => {
                 let name = String::from_utf8_lossy(event.name().as_ref()).to_string();
-                if name.ends_with("title") || name.ends_with("creator") {
+                if name.ends_with("title")
+                    || name.ends_with("creator")
+                    || name.ends_with("language")
+                {
                     current_text_tag = Some(name);
                 }
             }
@@ -109,6 +115,8 @@ fn parse_opf(opf: &str) -> Result<ParsedOpf> {
                         title = value;
                     } else if tag.ends_with("creator") && author.is_none() {
                         author = Some(value);
+                    } else if tag.ends_with("language") && language.is_none() {
+                        language = Some(value);
                     }
                 }
             }
@@ -124,6 +132,7 @@ fn parse_opf(opf: &str) -> Result<ParsedOpf> {
     Ok(ParsedOpf {
         title,
         author,
+        language,
         manifest,
         spine,
     })
@@ -171,6 +180,7 @@ pub fn extract_epub(epub_path: &Path, work_dir: &Path) -> Result<EpubExtractionR
     let ParsedOpf {
         mut title,
         author,
+        language,
         manifest,
         spine,
     } = parse_opf(&opf)?;
@@ -186,6 +196,7 @@ pub fn extract_epub(epub_path: &Path, work_dir: &Path) -> Result<EpubExtractionR
     fs::create_dir_all(&chapters_dir)?;
     let mut chapters = Vec::new();
     let mut total_chars = 0_i64;
+    let mut language_sample = String::new();
 
     for idref in spine {
         let Some(item) = manifest.get(&idref) else {
@@ -203,6 +214,11 @@ pub fn extract_epub(epub_path: &Path, work_dir: &Path) -> Result<EpubExtractionR
         let text_path: PathBuf = chapters_dir.join(format!("{:04}.txt", index + 1));
         fs::write(&text_path, &text)?;
         total_chars += text.len() as i64;
+        if language_sample.chars().count() < 50_000 {
+            let remaining = 50_000_usize.saturating_sub(language_sample.chars().count());
+            language_sample.extend(text.chars().take(remaining));
+            language_sample.push('\n');
+        }
         chapters.push(ChapterExtraction {
             index: index as i64,
             title: chapter_title(item, index),
@@ -214,10 +230,31 @@ pub fn extract_epub(epub_path: &Path, work_dir: &Path) -> Result<EpubExtractionR
         return Err(anyhow!("EPUB parser produced zero readable chapters."));
     }
 
+    let language = resolve_narration_language(language.as_deref(), &language_sample)
+        .ok_or_else(|| anyhow!("Only English and Spanish EPUBs are supported."))?;
+
     Ok(EpubExtractionResult {
         title,
         author,
+        language: language.to_string(),
         chapters,
         total_chars,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parses_epub_language_metadata() {
+        let parsed = parse_opf(
+            r#"<package><metadata><dc:title>Book</dc:title><dc:creator>Author</dc:creator><dc:language>en-GB</dc:language></metadata><manifest/><spine/></package>"#,
+        )
+        .unwrap();
+
+        assert_eq!(parsed.title, "Book");
+        assert_eq!(parsed.author.as_deref(), Some("Author"));
+        assert_eq!(parsed.language.as_deref(), Some("en-GB"));
+    }
 }

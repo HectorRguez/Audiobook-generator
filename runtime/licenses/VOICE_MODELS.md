@@ -27,6 +27,18 @@ models below are redistributed unchanged. Source revisions are pinned in
 - Changes by Audiobook Generator: none; the ONNX model and configuration are
   redistributed unchanged.
 
+## en_US-kristin-medium (Kristin)
+
+- Source: https://huggingface.co/rhasspy/piper-voices/tree/e21c7de8d4eab79b902f0d61e662b3f21664b8d2/en/en_US/kristin/medium
+- Model card: https://huggingface.co/rhasspy/piper-voices/blob/e21c7de8d4eab79b902f0d61e662b3f21664b8d2/en/en_US/kristin/medium/MODEL_CARD
+- Dataset source: https://librivox.org
+- Declared terms: public domain
+- Public-domain statement: https://librivox.org/pages/public-domain/
+- Attribution: Kristin Piper voice trained from public-domain LibriVox
+  recordings.
+- Changes by Audiobook Generator: none; the ONNX model and configuration are
+  redistributed unchanged.
+
 ## Excluded Models
 
 `es_ES-glados-medium` is not bundled because its upstream repository does not

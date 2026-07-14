@@ -84,7 +84,7 @@ jobs:
         run: npm run build:runtime -- --target ${{ matrix.target }}
 
       - name: Smoke test Piper runtime
-        run: npm run smoke:runtime -- --runtime runtime/dist/${{ matrix.target }}
+        run: npm run smoke:runtime -- --runtime runtime/dist/${{ matrix.target }} --all-voices
 
       - name: Generate voice demos
         if: matrix.target == 'linux-x64'

@@ -12,16 +12,28 @@ interface RuntimeManifest {
   ffmpegExe: string;
   voices: Array<{
     id: string;
+    locale: string;
     modelPath: string;
     configPath: string;
   }>;
 }
 
-const DEMO_TEXT = [
-  "Este es un fragmento de demostracion para escuchar el ritmo, la claridad y el tono de esta voz.",
-  "La aplicacion convierte tus libros EPUB en audiolibros sin enviar el texto a internet.",
-  "Todo el proceso ocurre en tu ordenador, para que puedas escuchar tus lecturas con privacidad y sin pagar por cada minuto generado."
-].join(" ");
+const DEMO_TEXT: Record<"en" | "es", string> = {
+  en: [
+    "This is a short sample so you can hear the rhythm, clarity, and tone of this voice.",
+    "The application converts EPUB books into audiobooks without sending the text over the internet.",
+    "Everything runs on your computer, so your reading stays private and there is no charge for each minute generated."
+  ].join(" "),
+  es: [
+    "Este es un fragmento de demostracion para escuchar el ritmo, la claridad y el tono de esta voz.",
+    "La aplicacion convierte tus libros EPUB en audiolibros sin enviar el texto a internet.",
+    "Todo el proceso ocurre en tu ordenador, para que puedas escuchar tus lecturas con privacidad y sin pagar por cada minuto generado."
+  ].join(" ")
+};
+
+function demoTextForVoice(voice: RuntimeManifest["voices"][number]): string {
+  return voice.locale.toLowerCase().startsWith("en") ? DEMO_TEXT.en : DEMO_TEXT.es;
+}
 
 function parseArg(name: string, fallback?: string): string {
   const prefix = `--${name}=`;
@@ -160,7 +172,7 @@ async function synthesizeDemo(
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        text: DEMO_TEXT
+        text: demoTextForVoice(voice)
       })
     });
     if (!response.ok) {

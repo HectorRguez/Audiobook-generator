@@ -32,7 +32,7 @@ Release packages include all conversion dependencies:
 - the compiled Rust/Tauri backend, including SQLite
 - the static Next.js/React renderer; no Node.js runtime is shipped
 - embedded Python with `piper-tts[http]==1.4.2`
-- Sharvard and Davefx Spanish Piper voice models
+- Sharvard and Davefx Spanish Piper voices, plus the Kristin English voice
 - FFmpeg and ffprobe
 
 Users do not need to install Python, Piper, voice models, SQLite, or FFmpeg.

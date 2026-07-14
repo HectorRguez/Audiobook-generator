@@ -12,10 +12,16 @@ interface RuntimeManifest {
   ffprobeExe: string;
   voices: Array<{
     id: string;
+    locale: string;
     modelPath: string;
     configPath: string;
   }>;
 }
+
+const SMOKE_TEXT: Record<"en" | "es", string> = {
+  en: "A short English voice test for the audiobook generator.",
+  es: "Prueba corta de voz para el generador de audiolibros."
+};
 
 function parseArg(name: string, fallback?: string): string {
   const prefix = `--${name}=`;
@@ -52,12 +58,9 @@ async function freePort(): Promise<number> {
 function spawnServer(
   root: string,
   manifest: RuntimeManifest,
+  voice: RuntimeManifest["voices"][number],
   port: number
 ): ChildProcessByStdio<null, Readable, Readable> {
-  const voice = manifest.voices[0];
-  if (!voice) {
-    throw new Error("Runtime manifest has no voices.");
-  }
   return spawn(path.resolve(root, manifest.pythonExe), [
     "-m",
     manifest.piperServerEntrypoint,
@@ -123,11 +126,13 @@ function run(command: string, args: string[]): Promise<void> {
   });
 }
 
-async function main(): Promise<void> {
-  const root = parseArg("runtime", path.join("runtime", "dist", `${process.platform}-${process.arch}`));
-  const manifest = JSON.parse(await fs.readFile(path.join(root, "runtime-manifest.json"), "utf8")) as RuntimeManifest;
+async function smokeVoice(
+  root: string,
+  manifest: RuntimeManifest,
+  voice: RuntimeManifest["voices"][number]
+): Promise<void> {
   const port = await freePort();
-  const server = spawnServer(root, manifest, port);
+  const server = spawnServer(root, manifest, voice, port);
   let stdout = "";
   let stderr = "";
   server.stdout.on("data", (chunk: Buffer) => {
@@ -142,14 +147,16 @@ async function main(): Promise<void> {
     const response = await fetch(`http://127.0.0.1:${port}/`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ text: "Prueba corta de voz para el generador de audiolibros." })
+      body: JSON.stringify({
+        text: voice.locale.toLowerCase().startsWith("en") ? SMOKE_TEXT.en : SMOKE_TEXT.es
+      })
     });
     if (!response.ok) {
-      throw new Error(`Piper HTTP synthesis failed with ${response.status}: ${await response.text()}`);
+      throw new Error(`Piper HTTP synthesis failed for ${voice.id} with ${response.status}: ${await response.text()}`);
     }
     const outDir = path.join(".cache", "runtime-smoke");
     await fs.mkdir(outDir, { recursive: true });
-    const wavPath = path.join(outDir, "sample.wav");
+    const wavPath = path.join(outDir, `${voice.id}.wav`);
     await fs.writeFile(wavPath, Buffer.from(await response.arrayBuffer()));
     await run(path.resolve(root, manifest.ffprobeExe), [
       "-v",
@@ -160,7 +167,7 @@ async function main(): Promise<void> {
       "json",
       wavPath
     ]);
-    console.log(`Runtime smoke test passed: ${wavPath}`);
+    console.log(`Runtime smoke test passed for ${voice.id}: ${wavPath}`);
   } finally {
     server.kill();
     await Promise.race([
@@ -170,6 +177,21 @@ async function main(): Promise<void> {
     if (server.exitCode !== 0 && (stdout || stderr)) {
       console.error(`Piper stdout:\n${stdout}\nPiper stderr:\n${stderr}`);
     }
+  }
+}
+
+async function main(): Promise<void> {
+  const root = parseArg("runtime", path.join("runtime", "dist", `${process.platform}-${process.arch}`));
+  const manifest = JSON.parse(await fs.readFile(path.join(root, "runtime-manifest.json"), "utf8")) as RuntimeManifest;
+  if (manifest.voices.length === 0) {
+    throw new Error("Runtime manifest has no voices.");
+  }
+
+  const voices = process.argv.includes("--all-voices")
+    ? manifest.voices
+    : manifest.voices.slice(0, 1);
+  for (const voice of voices) {
+    await smokeVoice(root, manifest, voice);
   }
 }
 

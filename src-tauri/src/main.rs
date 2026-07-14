@@ -1,6 +1,7 @@
 mod audio;
 mod commands;
 mod epub;
+mod language;
 mod models;
 mod piper_http;
 mod queue;

@@ -17,7 +17,7 @@
   "voices": [
     {
       "id": "es_ES-sharvard-medium",
-      "name": "Sharvard",
+      "name": "Sharvard (Spanish)",
       "demoUrl": "voice-demos/es_ES-sharvard-medium.mp3",
       "licenseName": "CC BY 3.0",
       "licenseUrl": "https://creativecommons.org/licenses/by/3.0/",
@@ -26,11 +26,20 @@
     },
     {
       "id": "es_ES-davefx-medium",
-      "name": "Davefx",
+      "name": "Davefx (Spanish)",
       "demoUrl": "voice-demos/es_ES-davefx-medium.mp3",
       "licenseName": "CC0 1.0",
       "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
       "sourceUrl": "https://huggingface.co/rhasspy/piper-voices/blob/e21c7de8d4eab79b902f0d61e662b3f21664b8d2/es/es_ES/davefx/medium/MODEL_CARD",
+      "usageNote": "No attribution required."
+    },
+    {
+      "id": "en_US-kristin-medium",
+      "name": "Kristin (English)",
+      "demoUrl": "voice-demos/en_US-kristin-medium.mp3",
+      "licenseName": "Public domain",
+      "licenseUrl": "https://librivox.org/pages/public-domain/",
+      "sourceUrl": "https://huggingface.co/rhasspy/piper-voices/blob/e21c7de8d4eab79b902f0d61e662b3f21664b8d2/en/en_US/kristin/medium/MODEL_CARD",
       "usageNote": "No attribution required."
     }
   ]

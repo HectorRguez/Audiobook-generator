@@ -78,16 +78,43 @@ pub struct ResolvedVoiceAsset {
 
 impl RuntimeAssets {
     pub fn default_voice_id(&self) -> Option<String> {
-        self.voices.first().map(|voice| voice.id.clone())
+        self.voices
+            .iter()
+            .find(|voice| voice.locale.starts_with("es"))
+            .map(|voice| voice.id.clone())
     }
 
     pub fn voice(&self, id: &str) -> Option<ResolvedVoiceAsset> {
         self.voices.iter().find(|voice| voice.id == id).cloned()
     }
 
+    pub fn narration_voice(
+        &self,
+        preferred_id: &str,
+        language: &str,
+    ) -> Option<ResolvedVoiceAsset> {
+        if language == "en" {
+            return self
+                .voices
+                .iter()
+                .find(|voice| voice.locale.starts_with("en"))
+                .cloned();
+        }
+
+        self.voice(preferred_id)
+            .filter(|voice| voice.locale.starts_with("es"))
+            .or_else(|| {
+                self.voices
+                    .iter()
+                    .find(|voice| voice.locale.starts_with("es"))
+                    .cloned()
+            })
+    }
+
     pub fn voice_infos(&self) -> Vec<VoiceInfo> {
         self.voices
             .iter()
+            .filter(|voice| voice.locale.starts_with("es"))
             .map(|voice| VoiceInfo {
                 id: voice.id.clone(),
                 name: voice.name.clone(),
@@ -225,6 +252,44 @@ fn validate_assets(assets: &RuntimeAssets) -> Result<()> {
 mod tests {
     use super::*;
 
+    fn voice(id: &str, locale: &str) -> ResolvedVoiceAsset {
+        ResolvedVoiceAsset {
+            id: id.to_string(),
+            name: id.to_string(),
+            locale: locale.to_string(),
+            quality: "medium".to_string(),
+            model_path: PathBuf::from(format!("{id}.onnx")),
+            config_path: PathBuf::from(format!("{id}.onnx.json")),
+            sample_rate: Some(22_050),
+            source_url: None,
+            model_card_url: None,
+            license_id: None,
+            license_name: None,
+            license_url: None,
+            usage_note: None,
+            attribution: None,
+        }
+    }
+
+    fn runtime_with_bilingual_voices() -> RuntimeAssets {
+        RuntimeAssets {
+            root_dir: PathBuf::new(),
+            manifest_path: PathBuf::new(),
+            target: "test".to_string(),
+            python_version: "3.12".to_string(),
+            piper_version: "1.4.2".to_string(),
+            python_exe: PathBuf::new(),
+            piper_server_entrypoint: "piper.http_server".to_string(),
+            ffmpeg_exe: PathBuf::new(),
+            ffprobe_exe: PathBuf::new(),
+            voices: vec![
+                voice("es_ES-sharvard-medium", "es_ES"),
+                voice("es_ES-davefx-medium", "es_ES"),
+                voice("en_US-kristin-medium", "en_US"),
+            ],
+        }
+    }
+
     #[test]
     fn parses_runtime_manifest() {
         let manifest = r#"{
@@ -249,5 +314,26 @@ mod tests {
         assert_eq!(target_key_for("linux", "x86_64"), "linux-x64");
         assert_eq!(target_key_for("macos", "aarch64"), "darwin-arm64");
         assert_eq!(target_key_for("windows", "x86_64"), "win32-x64");
+    }
+
+    #[test]
+    fn selects_the_single_english_voice_for_english_books() {
+        let runtime = runtime_with_bilingual_voices();
+        let selected = runtime
+            .narration_voice("es_ES-davefx-medium", "en")
+            .unwrap();
+
+        assert_eq!(selected.id, "en_US-kristin-medium");
+    }
+
+    #[test]
+    fn preserves_the_preferred_spanish_voice_for_spanish_books() {
+        let runtime = runtime_with_bilingual_voices();
+        let selected = runtime
+            .narration_voice("es_ES-davefx-medium", "es")
+            .unwrap();
+
+        assert_eq!(selected.id, "es_ES-davefx-medium");
+        assert_eq!(runtime.voice_infos().len(), 2);
     }
 }

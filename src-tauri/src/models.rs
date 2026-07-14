@@ -138,6 +138,7 @@ pub struct ChapterExtraction {
 pub struct EpubExtractionResult {
     pub title: String,
     pub author: Option<String>,
+    pub language: String,
     pub chapters: Vec<ChapterExtraction>,
     pub total_chars: i64,
 }

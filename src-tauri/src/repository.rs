@@ -488,6 +488,16 @@ impl Repository {
         })
     }
 
+    pub fn update_job_voice(&self, job_id: &str, voice_id: &str) -> Result<()> {
+        self.with_conn(|conn| {
+            conn.execute(
+                "UPDATE jobs SET voice_id = ?1, updated_at = ?2 WHERE id = ?3",
+                params![voice_id, now_ts(), job_id],
+            )?;
+            Ok(())
+        })
+    }
+
     #[allow(clippy::too_many_arguments)]
     pub fn update_job_progress(
         &self,
