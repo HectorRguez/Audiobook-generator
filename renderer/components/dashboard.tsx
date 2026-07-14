@@ -87,8 +87,6 @@ interface UiStrings {
   languageSpanish: string;
   languageEnglish: string;
   voiceLabel: string;
-  selectedVoiceSummary: string;
-  voiceLicenseLabel: string;
   updateAvailable: string;
   updateAction: string;
   updateDownloading: string;
@@ -98,7 +96,6 @@ interface UiStrings {
   gpuAccelerationLabel: string;
   gpuAccelerationEnabled: string;
   gpuAccelerationDisabled: string;
-  gpuAccelerationHint: string;
   close: string;
   reorderAriaPrefix: string;
   deleteQueueAriaPrefix: string;
@@ -242,8 +239,6 @@ const UI_STRINGS: Record<UiLocale, UiStrings> = {
     languageSpanish: "Spanish",
     languageEnglish: "English",
     voiceLabel: "Voice",
-    selectedVoiceSummary: "Current voice: {voice}. This Spanish voice is tuned for long audiobook narration.",
-    voiceLicenseLabel: "Model license",
     updateAvailable: "Update {version} is available.",
     updateAction: "Update and restart",
     updateDownloading: "Downloading update...",
@@ -253,7 +248,6 @@ const UI_STRINGS: Record<UiLocale, UiStrings> = {
     gpuAccelerationLabel: "NVIDIA GPU acceleration",
     gpuAccelerationEnabled: "Enabled",
     gpuAccelerationDisabled: "Disabled",
-    gpuAccelerationHint: "Uses CUDA when available and falls back to CPU automatically.",
     close: "Close",
     reorderAriaPrefix: "Reorder",
     deleteQueueAriaPrefix: "Delete queue item",
@@ -307,8 +301,6 @@ const UI_STRINGS: Record<UiLocale, UiStrings> = {
     languageSpanish: "Espanol",
     languageEnglish: "Ingles",
     voiceLabel: "Voz",
-    selectedVoiceSummary: "Voz actual: {voice}. Esta voz en espanol esta optimizada para narraciones largas de audiolibros.",
-    voiceLicenseLabel: "Licencia del modelo",
     updateAvailable: "La actualizacion {version} esta disponible.",
     updateAction: "Actualizar y reiniciar",
     updateDownloading: "Descargando actualizacion...",
@@ -318,7 +310,6 @@ const UI_STRINGS: Record<UiLocale, UiStrings> = {
     gpuAccelerationLabel: "Aceleracion GPU NVIDIA",
     gpuAccelerationEnabled: "Activada",
     gpuAccelerationDisabled: "Desactivada",
-    gpuAccelerationHint: "Usa CUDA cuando esta disponible y vuelve a CPU automaticamente.",
     close: "Cerrar",
     reorderAriaPrefix: "Reordenar",
     deleteQueueAriaPrefix: "Eliminar elemento de la cola",
@@ -642,8 +633,6 @@ export function Dashboard() {
     () => voices.find((voice) => voice.id === defaultVoiceId) || voices[0] || null,
     [defaultVoiceId, voices]
   );
-  const selectedVoiceName = selectedVoice ? displayVoiceName(selectedVoice) : "-";
-  const selectedVoiceSummary = uiStrings.selectedVoiceSummary.replace("{voice}", selectedVoiceName);
   const updateProgressValue = updateStatus?.phase === "downloading" && updateStatus.totalBytes
     ? Math.min(100, Math.round(((updateStatus.downloadedBytes || 0) / updateStatus.totalBytes) * 100))
     : null;
@@ -1280,13 +1269,6 @@ export function Dashboard() {
                     ))}
                   </SelectContent>
                 </Select>
-                <p className="text-xs text-muted-foreground">{selectedVoiceSummary}</p>
-                {selectedVoice?.licenseName && (
-                  <p className="text-xs text-muted-foreground">
-                    {uiStrings.voiceLicenseLabel}: {selectedVoice.licenseName}
-                    {selectedVoice.usageNote ? ` - ${selectedVoice.usageNote}` : ""}
-                  </p>
-                )}
               </div>
               <div className="space-y-2">
                 <label htmlFor="gpu-acceleration" className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
@@ -1307,7 +1289,6 @@ export function Dashboard() {
                     <SelectItem value="disabled">{uiStrings.gpuAccelerationDisabled}</SelectItem>
                   </SelectContent>
                 </Select>
-                <p className="text-xs text-muted-foreground">{uiStrings.gpuAccelerationHint}</p>
               </div>
               <div className="flex justify-end">
                 <Button variant="ghost" onClick={() => setIsSettingsOpen(false)}>
