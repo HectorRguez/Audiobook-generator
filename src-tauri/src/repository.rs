@@ -200,7 +200,6 @@ impl Repository {
             ("defaultOutputFormat", Value::String("mp3".to_string())),
             ("keepIntermediates", Value::Bool(false)),
             ("maxConcurrentJobs", Value::Number(1.into())),
-            ("useNvidiaGpu", Value::Bool(false)),
         ];
         self.with_conn(|conn| {
             let ts = now_ts();
@@ -265,7 +264,6 @@ impl Repository {
                     ("maxConcurrentJobs", Value::Number(value)) => {
                         settings.max_concurrent_jobs = value.as_i64()
                     }
-                    ("useNvidiaGpu", Value::Bool(value)) => settings.use_nvidia_gpu = Some(value),
                     _ => {}
                 }
             }
@@ -298,9 +296,6 @@ impl Repository {
       }
       if let Some(value) = patch.max_concurrent_jobs {
         set("maxConcurrentJobs", Value::Number(value.into()))?;
-      }
-      if let Some(value) = patch.use_nvidia_gpu {
-        set("useNvidiaGpu", Value::Bool(value))?;
       }
       Ok(())
     })?;
@@ -734,7 +729,6 @@ mod tests {
                 default_output_format: None,
                 keep_intermediates: None,
                 max_concurrent_jobs: None,
-                use_nvidia_gpu: None,
             })
             .unwrap();
             repo.ensure_defaults().unwrap();

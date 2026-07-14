@@ -93,7 +93,6 @@ pub struct AppSettings {
     pub default_output_format: Option<String>,
     pub keep_intermediates: Option<bool>,
     pub max_concurrent_jobs: Option<i64>,
-    pub use_nvidia_gpu: Option<bool>,
 }
 
 impl Default for AppSettings {
@@ -104,7 +103,6 @@ impl Default for AppSettings {
             default_output_format: Some("mp3".to_string()),
             keep_intermediates: Some(false),
             max_concurrent_jobs: Some(1),
-            use_nvidia_gpu: Some(false),
         }
     }
 }

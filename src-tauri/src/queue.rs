@@ -189,7 +189,7 @@ impl QueueManager {
         self.log(
             &job.id,
             "info",
-            &format!("Starting job processing with voice {} (CPU).", voice.name),
+            &format!("Starting job processing with voice {}.", voice.name),
         );
         self.emit_job(&job.id);
 

@@ -90,7 +90,6 @@ export interface AppSettings {
   defaultOutputFormat: OutputFormat;
   keepIntermediates: boolean;
   maxConcurrentJobs: number;
-  useNvidiaGpu: boolean;
 }
 
 export interface ChapterExtraction {
