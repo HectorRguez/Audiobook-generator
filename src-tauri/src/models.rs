@@ -1,5 +1,7 @@
 use serde::{Deserialize, Serialize};
 
+pub const DEFAULT_VOICE_ID: &str = "es_ES-sharvard-medium";
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct QueueJob {
     pub id: String,
@@ -98,7 +100,7 @@ impl Default for AppSettings {
     fn default() -> Self {
         Self {
             default_output_dir: None,
-            default_voice_id: Some("es_ES-carlfm-high".to_string()),
+            default_voice_id: Some(DEFAULT_VOICE_ID.to_string()),
             default_output_format: Some("mp3".to_string()),
             keep_intermediates: Some(false),
             max_concurrent_jobs: Some(1),

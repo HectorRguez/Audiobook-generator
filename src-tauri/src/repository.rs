@@ -10,6 +10,7 @@ use uuid::Uuid;
 
 use crate::models::{
     AppSettings, Chapter, ChapterExtraction, ChapterForUi, GeneratedAudio, JobDetail, QueueJob,
+    DEFAULT_VOICE_ID,
 };
 
 const SCHEMA: &str = r#"
@@ -194,7 +195,7 @@ impl Repository {
             ),
             (
                 "defaultVoiceId",
-                Value::String("es_ES-carlfm-high".to_string()),
+                Value::String(DEFAULT_VOICE_ID.to_string()),
             ),
             ("defaultOutputFormat", Value::String("mp3".to_string())),
             ("keepIntermediates", Value::Bool(false)),
@@ -209,6 +210,16 @@ impl Repository {
           params![key, value.to_string(), ts],
         )?;
             }
+            conn.execute(
+                "UPDATE settings SET value_json = ?1, updated_at = ?2
+                 WHERE key = 'defaultVoiceId' AND value_json IN (?3, ?4)",
+                params![
+                    Value::String(DEFAULT_VOICE_ID.to_string()).to_string(),
+                    ts,
+                    Value::String("es_ES-carlfm-high".to_string()).to_string(),
+                    Value::String("es_ES-miro-high".to_string()).to_string(),
+                ],
+            )?;
             Ok(())
         })
     }
@@ -331,7 +342,7 @@ impl Repository {
           status: "queued".to_string(),
           progress: 0.0,
           queue_position: start_pos + index as i64,
-          voice_id: settings.default_voice_id.clone().unwrap_or_else(|| "es_ES-carlfm-high".to_string()),
+          voice_id: settings.default_voice_id.clone().unwrap_or_else(|| DEFAULT_VOICE_ID.to_string()),
           output_format: settings.default_output_format.clone().unwrap_or_else(|| "mp3".to_string()),
           output_dir: settings
             .default_output_dir
@@ -696,6 +707,31 @@ mod tests {
             .enqueue_epub_files(&[tmp.path().join("book.epub").to_string_lossy().to_string()])
             .unwrap();
         assert_eq!(jobs.len(), 1);
+        assert_eq!(jobs[0].voice_id, DEFAULT_VOICE_ID);
         assert_eq!(repo.list_jobs().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn migrates_retired_default_voices_to_sharvard() {
+        let tmp = tempfile::tempdir().unwrap();
+        let repo =
+            Repository::new(tmp.path().join("db.sqlite"), tmp.path().join("outputs")).unwrap();
+
+        for retired_voice in ["es_ES-carlfm-high", "es_ES-miro-high"] {
+            repo.set_settings(AppSettings {
+                default_voice_id: Some(retired_voice.to_string()),
+                default_output_dir: None,
+                default_output_format: None,
+                keep_intermediates: None,
+                max_concurrent_jobs: None,
+                use_nvidia_gpu: None,
+            })
+            .unwrap();
+            repo.ensure_defaults().unwrap();
+            assert_eq!(
+                repo.get_settings().unwrap().default_voice_id.as_deref(),
+                Some(DEFAULT_VOICE_ID)
+            );
+        }
     }
 }

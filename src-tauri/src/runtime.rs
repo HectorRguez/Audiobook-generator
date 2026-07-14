@@ -237,11 +237,11 @@ mod tests {
       "piperServerEntrypoint":"piper.http_server",
       "ffmpegExe":"ffmpeg/bin/ffmpeg",
       "ffprobeExe":"ffmpeg/bin/ffprobe",
-      "voices":[{"id":"es_ES-carlfm-high","name":"Carlfm","locale":"es_ES","quality":"high","modelPath":"voices/a.onnx","configPath":"voices/a.onnx.json","sampleRate":22050}]
+      "voices":[{"id":"es_ES-sharvard-medium","name":"Sharvard","locale":"es_ES","quality":"medium","modelPath":"voices/a.onnx","configPath":"voices/a.onnx.json","sampleRate":22050}]
     }"#;
         let parsed: RuntimeManifest = serde_json::from_str(manifest).unwrap();
         assert_eq!(parsed.piper_version, "1.4.2");
-        assert_eq!(parsed.voices[0].id, "es_ES-carlfm-high");
+        assert_eq!(parsed.voices[0].id, "es_ES-sharvard-medium");
     }
 
     #[test]
