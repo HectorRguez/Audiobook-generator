@@ -19,7 +19,7 @@
       font-family: "Georgia", serif;
       font-size: 2em;
       font-weight: normal;
-      margin-bottom: 0.2em;
+      margin: 0;
     }
     h2 {
       font-size: 1em;
@@ -27,9 +27,45 @@
       margin-top: 2.5em;
       margin-bottom: 1em;
       text-transform: uppercase;
-      letter-spacing: 0.05em;
+      letter-spacing: 0;
     }
     a { color: #1a1a1a; }
+    .site-header {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 24px;
+      margin-bottom: 0.2em;
+    }
+    .language-switch {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      flex-shrink: 0;
+      font-size: 0.78em;
+      text-transform: uppercase;
+    }
+    .language-switch button {
+      appearance: none;
+      border: 0;
+      border-bottom: 1px solid transparent;
+      padding: 1px 0;
+      background: transparent;
+      color: #666;
+      font: inherit;
+      cursor: pointer;
+    }
+    .language-switch button:hover,
+    .language-switch button:focus-visible {
+      color: #1a1a1a;
+      border-bottom-color: #1a1a1a;
+      outline: none;
+    }
+    .language-switch button[aria-pressed="true"] {
+      color: #1a1a1a;
+      border-bottom-color: #1a1a1a;
+      font-weight: bold;
+    }
     .item {
       display: flex;
       gap: 16px;
@@ -91,35 +127,112 @@
     audio::-webkit-media-controls-panel {
       background-color: #f5f2eb;
     }
+    @media (max-width: 480px) {
+      body { padding: 28px 18px; }
+      .site-header {
+        align-items: flex-start;
+        flex-direction: column;
+        gap: 8px;
+      }
+    }
   </style>
 </head>
 <body>
-  <h1>Audiobook Generator</h1>
-  <p>Turn English and Spanish EPUB files into local audiobooks with bundled <a href="https://github.com/OHF-Voice/piper1-gpl">Piper</a> voices.</p>
-  <p class="local-note">
-    The app runs on your computer and does not upload your books. It is free to use, with no
-    account or subscription.
-  </p>
+  <header class="site-header">
+    <h1>Audiobook Generator</h1>
+    <nav class="language-switch" aria-label="Language">
+      <button type="button" data-language="en" lang="en" aria-pressed="true">English</button>
+      <span aria-hidden="true">/</span>
+      <button type="button" data-language="es" lang="es" aria-pressed="false">Español</button>
+    </nav>
+  </header>
+  <p id="intro"></p>
+  <p class="local-note" id="local-note"></p>
 
-  <h2>Downloads</h2>
+  <h2 id="downloads-heading"></h2>
   <div id="downloads"></div>
 
-  <h2>Voice demos</h2>
+  <h2 id="voices-heading"></h2>
   <div id="voices"></div>
 
-  <h2>Licensing</h2>
-  <p>
-    The bundled <a href="https://github.com/OHF-Voice/piper1-gpl/tree/v1.4.2">Piper 1.4.2</a>
-    engine is GPL-3.0. Voice models have separate terms shown with each demo. Full license texts
-    and attribution are included with every app and
-    <a href="https://github.com/HectorRguez/Audiobook-generator/blob/main/runtime/licenses/VOICE_MODELS.md">published here</a>.
-  </p>
+  <h2 id="licensing-heading"></h2>
+  <p id="licensing-copy"></p>
 
   <script>
-    async function main() {
-      const data = await fetch("downloads.json", { cache: "no-store" }).then((response) => response.json());
-      const downloads = document.getElementById("downloads");
-      downloads.innerHTML = data.platforms.map((platform) => `
+    const translations = {
+      en: {
+        pageTitle: "Audiobook Generator",
+        languageLabel: "Language",
+        intro: 'Turn English and Spanish EPUB files into local audiobooks with bundled <a href="https://github.com/OHF-Voice/piper1-gpl">Piper</a> voices.',
+        localNote: "The app runs on your computer and does not upload your books. It is free to use, with no account or subscription.",
+        downloadsHeading: "Downloads",
+        voicesHeading: "Voice demos",
+        licensingHeading: "Licensing",
+        licensingCopy: 'The bundled <a href="https://github.com/OHF-Voice/piper1-gpl/tree/v1.4.2">Piper 1.4.2</a> engine is GPL-3.0. Voice models have separate terms shown with each demo. Full license texts and attribution are included with every app and <a href="https://github.com/HectorRguez/Audiobook-generator/blob/main/runtime/licenses/VOICE_MODELS.md">published here</a>.',
+        download: "download",
+        downloadLabel: (platform) => `Download ${platform}`,
+        platformDescriptions: {
+          "Audiobook-Generator-windows-x64.exe": "Installer with automatic in-app updates.",
+          "Audiobook-Generator-linux-x64.deb": "Debian package; install future versions manually."
+        },
+        voices: {
+          "es_ES-sharvard-medium": { name: "Sharvard (Spanish)", usageNote: "Attribution required.", source: "model source" },
+          "es_ES-davefx-medium": { name: "Davefx (Spanish)", usageNote: "No attribution required.", source: "model source" },
+          "en_US-kristin-medium": { name: "Kristin (English)", usageNote: "No attribution required.", source: "model source", licenseName: "Public domain" }
+        },
+        error: "The download information could not be loaded."
+      },
+      es: {
+        pageTitle: "Audiobook Generator",
+        languageLabel: "Idioma",
+        intro: 'Convierte archivos EPUB en español e inglés en audiolibros locales con las voces incluidas de <a href="https://github.com/OHF-Voice/piper1-gpl">Piper</a>.',
+        localNote: "La aplicación funciona en tu ordenador y no sube tus libros. Es gratuita y no requiere cuenta ni suscripción.",
+        downloadsHeading: "Descargas",
+        voicesHeading: "Muestras de voz",
+        licensingHeading: "Licencias",
+        licensingCopy: 'El motor <a href="https://github.com/OHF-Voice/piper1-gpl/tree/v1.4.2">Piper 1.4.2</a> incluido usa la licencia GPL-3.0. Los modelos de voz tienen condiciones propias, indicadas junto a cada muestra. Los textos completos de las licencias y las atribuciones se incluyen con la aplicación y están <a href="https://github.com/HectorRguez/Audiobook-generator/blob/main/runtime/licenses/VOICE_MODELS.md">publicados aquí</a>.',
+        download: "descargar",
+        downloadLabel: (platform) => `Descargar ${platform}`,
+        platformDescriptions: {
+          "Audiobook-Generator-windows-x64.exe": "Instalador con actualizaciones automáticas desde la aplicación.",
+          "Audiobook-Generator-linux-x64.deb": "Paquete Debian; las nuevas versiones se instalan manualmente."
+        },
+        voices: {
+          "es_ES-sharvard-medium": { name: "Sharvard (español)", usageNote: "Requiere atribución.", source: "origen del modelo" },
+          "es_ES-davefx-medium": { name: "Davefx (español)", usageNote: "No requiere atribución.", source: "origen del modelo" },
+          "en_US-kristin-medium": { name: "Kristin (inglés)", usageNote: "No requiere atribución.", source: "origen del modelo", licenseName: "Dominio público" }
+        },
+        error: "No se pudo cargar la información de las descargas."
+      }
+    };
+
+    let downloadsData;
+
+    function getInitialLanguage() {
+      try {
+        const saved = localStorage.getItem("language");
+        if (saved === "en" || saved === "es") return saved;
+      } catch (_) {}
+      return navigator.language.toLowerCase().startsWith("es") ? "es" : "en";
+    }
+
+    function render(language) {
+      const copy = translations[language];
+      document.documentElement.lang = language;
+      document.title = copy.pageTitle;
+      document.querySelector(".language-switch").setAttribute("aria-label", copy.languageLabel);
+      document.querySelectorAll("[data-language]").forEach((button) => {
+        button.setAttribute("aria-pressed", String(button.dataset.language === language));
+      });
+      document.getElementById("intro").innerHTML = copy.intro;
+      document.getElementById("local-note").textContent = copy.localNote;
+      document.getElementById("downloads-heading").textContent = copy.downloadsHeading;
+      document.getElementById("voices-heading").textContent = copy.voicesHeading;
+      document.getElementById("licensing-heading").textContent = copy.licensingHeading;
+      document.getElementById("licensing-copy").innerHTML = copy.licensingCopy;
+
+      if (!downloadsData) return;
+      document.getElementById("downloads").innerHTML = downloadsData.platforms.map((platform) => `
         <div class="item">
           <div class="bullet"></div>
           <div class="item-body">
@@ -127,35 +240,55 @@
               <span class="item-title">${platform.label}</span>
               <span>${platform.file}</span>
             </div>
-            <div class="item-desc">${platform.description}</div>
+            <div class="item-desc">${copy.platformDescriptions[platform.file] || platform.description}</div>
             <div class="links">
-              <a class="button-link" href="${platform.url}">download</a>
+              <a class="button-link" href="${platform.url}" aria-label="${copy.downloadLabel(platform.label)}">${copy.download}</a>
             </div>
           </div>
         </div>
       `).join("");
 
-      const voices = document.getElementById("voices");
-      voices.innerHTML = data.voices.map((voice) => `
-        <div class="item">
-          <div class="bullet"></div>
-          <div class="item-body">
-            <div class="item-header">
-              <span class="item-title">${voice.name}</span>
-              <span>${voice.id}</span>
+      document.getElementById("voices").innerHTML = downloadsData.voices.map((voice) => {
+        const localized = copy.voices[voice.id] || {};
+        return `
+          <div class="item">
+            <div class="bullet"></div>
+            <div class="item-body">
+              <div class="item-header">
+                <span class="item-title">${localized.name || voice.name}</span>
+                <span>${voice.id}</span>
+              </div>
+              <div class="item-desc">
+                <a href="${voice.licenseUrl}" rel="license">${localized.licenseName || voice.licenseName}</a>
+                - ${localized.usageNote || voice.usageNote}
+                - <a href="${voice.sourceUrl}">${localized.source || "model source"}</a>
+              </div>
+              <audio controls preload="metadata" src="${voice.demoUrl}"></audio>
             </div>
-            <div class="item-desc">
-              <a href="${voice.licenseUrl}" rel="license">${voice.licenseName}</a>
-              - ${voice.usageNote}
-              - <a href="${voice.sourceUrl}">model source</a>
-            </div>
-            <audio controls preload="metadata" src="${voice.demoUrl}"></audio>
           </div>
-        </div>
-      `).join("");
+        `;
+      }).join("");
+    }
+
+    async function main() {
+      let language = getInitialLanguage();
+      render(language);
+      document.querySelectorAll("[data-language]").forEach((button) => {
+        button.addEventListener("click", () => {
+          language = button.dataset.language;
+          try { localStorage.setItem("language", language); } catch (_) {}
+          render(language);
+        });
+      });
+      downloadsData = await fetch("downloads.json", { cache: "no-store" }).then((response) => {
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        return response.json();
+      });
+      render(language);
     }
     main().catch((error) => {
-      document.body.insertAdjacentHTML("beforeend", `<p>${error.message}</p>`);
+      const copy = translations[document.documentElement.lang] || translations.en;
+      document.body.insertAdjacentHTML("beforeend", `<p>${copy.error} ${error.message}</p>`);
     });
   </script>
 </body>
