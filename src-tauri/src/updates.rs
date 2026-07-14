@@ -1,5 +1,8 @@
 use serde::Serialize;
-use tauri::{AppHandle, Emitter};
+use tauri::AppHandle;
+#[cfg(not(target_os = "linux"))]
+use tauri::Emitter;
+#[cfg(not(target_os = "linux"))]
 use tauri_plugin_updater::{Update, UpdaterExt};
 
 #[derive(Debug, Clone, Serialize)]
@@ -11,6 +14,7 @@ pub struct UpdateInfo {
     pub date: Option<String>,
 }
 
+#[cfg(not(target_os = "linux"))]
 impl From<&Update> for UpdateInfo {
     fn from(update: &Update) -> Self {
         Self {
@@ -22,6 +26,7 @@ impl From<&Update> for UpdateInfo {
     }
 }
 
+#[cfg(not(target_os = "linux"))]
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct UpdateStatus {
@@ -32,11 +37,13 @@ struct UpdateStatus {
     message: Option<String>,
 }
 
+#[cfg(not(target_os = "linux"))]
 fn emit_status(app: &AppHandle, status: UpdateStatus) {
     let _ = app.emit("updateStatusUpdated", status);
 }
 
 #[tauri::command]
+#[cfg(not(target_os = "linux"))]
 pub async fn check_for_update(app: AppHandle) -> Result<Option<UpdateInfo>, String> {
     let update = app
         .updater()
@@ -48,6 +55,13 @@ pub async fn check_for_update(app: AppHandle) -> Result<Option<UpdateInfo>, Stri
 }
 
 #[tauri::command]
+#[cfg(target_os = "linux")]
+pub async fn check_for_update(_app: AppHandle) -> Result<Option<UpdateInfo>, String> {
+    Ok(None)
+}
+
+#[tauri::command]
+#[cfg(not(target_os = "linux"))]
 pub async fn install_update(app: AppHandle) -> Result<(), String> {
     let update = app
         .updater()
@@ -120,4 +134,10 @@ pub async fn install_update(app: AppHandle) -> Result<(), String> {
     }
 
     app.restart();
+}
+
+#[tauri::command]
+#[cfg(target_os = "linux")]
+pub async fn install_update(_app: AppHandle) -> Result<(), String> {
+    Err("Automatic updates are not available on Linux.".to_string())
 }

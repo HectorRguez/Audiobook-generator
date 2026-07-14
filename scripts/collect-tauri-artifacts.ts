@@ -21,11 +21,6 @@ const ARTIFACT_SPECS: Record<string, ArtifactFileSpec[]> = {
     {
       extension: ".deb",
       fileName: "Audiobook-Generator-linux-x64.deb"
-    },
-    {
-      extension: ".AppImage",
-      fileName: "Audiobook-Generator-linux-x64.AppImage",
-      updaterSignature: true
     }
   ]
 };

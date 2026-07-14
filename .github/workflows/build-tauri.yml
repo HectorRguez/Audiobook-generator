@@ -125,7 +125,7 @@ jobs:
           if-no-files-found: error
 
       - name: Upload updater signatures
-        if: github.event_name != 'pull_request'
+        if: github.event_name != 'pull_request' && matrix.target == 'win32-x64'
         uses: actions/upload-artifact@v4
         with:
           name: updater-signatures-${{ matrix.target }}
@@ -165,9 +165,8 @@ jobs:
       - name: Download updater signatures
         uses: actions/download-artifact@v4
         with:
-          pattern: updater-signatures-*
+          name: updater-signatures-win32-x64
           path: updater-signatures
-          merge-multiple: true
 
       - name: Build updater manifest
         run: npm run build:updater-manifest -- --tag ${{ github.ref_name }} --assets updater-signatures --out updater-signatures/latest.json

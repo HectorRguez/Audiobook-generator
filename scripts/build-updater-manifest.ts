@@ -10,10 +10,6 @@ const PLATFORM_SPECS: Record<string, PlatformSpec> = {
   "windows-x86_64": {
     fileName: "Audiobook-Generator-windows-x64.exe",
     signatureFileName: "Audiobook-Generator-windows-x64.exe.sig"
-  },
-  "linux-x86_64": {
-    fileName: "Audiobook-Generator-linux-x64.AppImage",
-    signatureFileName: "Audiobook-Generator-linux-x64.AppImage.sig"
   }
 };
 
