@@ -4,7 +4,6 @@ import { save } from "@tauri-apps/plugin-dialog";
 import { openPath } from "@tauri-apps/plugin-opener";
 import type {
   AppSettings,
-  BootstrapStatus,
   GeneratedAudio,
   JobDetail,
   LogEvent,
@@ -32,14 +31,12 @@ export interface DesktopApi {
   getSettings: () => Promise<AppSettings>;
   setSettings: (patch: Partial<AppSettings>) => Promise<AppSettings>;
   listVoices: () => Promise<VoiceInfo[]>;
-  bootstrapAssets: () => Promise<unknown>;
   checkForUpdate: () => Promise<UpdateInfo | null>;
   installUpdate: () => Promise<void>;
   onQueueUpdated: (callback: (jobs: QueueJob[]) => void) => () => void;
   onJobUpdated: (callback: (job: JobDetail) => void) => () => void;
   onGeneratedUpdated: (callback: (outputs: GeneratedAudio[]) => void) => () => void;
   onLogEvent: (callback: (event: LogEvent) => void) => () => void;
-  onBootstrapStatus: (callback: (status: BootstrapStatus) => void) => () => void;
   onSettingsUpdated: (callback: (settings: Partial<AppSettings>) => void) => () => void;
   onUpdateStatus: (callback: (status: UpdateStatus) => void) => () => void;
 }
@@ -117,14 +114,12 @@ export function createTauriApi(): DesktopApi | null {
     getSettings: () => invokeCommand<AppSettings>("get_settings"),
     setSettings: (patch) => invokeCommand<AppSettings>("set_settings", { patch }),
     listVoices: () => invokeCommand<VoiceInfo[]>("list_voices"),
-    bootstrapAssets: () => invokeCommand<unknown>("bootstrap_assets"),
     checkForUpdate: () => invokeCommand<UpdateInfo | null>("check_for_update"),
     installUpdate: () => invokeCommand<void>("install_update"),
     onQueueUpdated: (callback) => subscribe<QueueJob[]>("queueUpdated", callback),
     onJobUpdated: (callback) => subscribe<JobDetail>("jobUpdated", callback),
     onGeneratedUpdated: (callback) => subscribe<GeneratedAudio[]>("generatedUpdated", callback),
     onLogEvent: (callback) => subscribe<LogEvent>("logEvent", callback),
-    onBootstrapStatus: (callback) => subscribe<BootstrapStatus>("bootstrapStatusUpdated", callback),
     onSettingsUpdated: (callback) => subscribe<Partial<AppSettings>>("settingsUpdated", callback),
     onUpdateStatus: (callback) => subscribe<UpdateStatus>("updateStatusUpdated", callback)
   };

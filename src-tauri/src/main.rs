@@ -28,7 +28,6 @@ fn main() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
-            bootstrap_assets,
             cancel_job,
             check_for_update,
             copy_generated_audio,

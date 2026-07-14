@@ -34,7 +34,6 @@ import {
 } from "lucide-react";
 import type {
   AppSettings,
-  BootstrapStatus,
   GeneratedAudio,
   JobDetail,
   JobStatus,
@@ -61,9 +60,6 @@ function statusVariant(status: JobStatus) {
   return "secondary" as const;
 }
 
-const BOOTSTRAP_INIT_ERROR = "Failed to bootstrap runtime assets";
-const BRIDGE_UNAVAILABLE_ERROR = "Desktop runtime unavailable in this view. Use the Tauri app window started by `npm run dev`.";
-
 type UiLocale = "en" | "es";
 
 interface UiStrings {
@@ -81,16 +77,6 @@ interface UiStrings {
   resume: string;
   cancel: string;
   estimatingEta: string;
-  runtimeAsset: string;
-  piperEngine: string;
-  spanishVoice: string;
-  bootstrapPhaseDownloading: string;
-  bootstrapPhaseExtracting: string;
-  bootstrapPhaseReady: string;
-  bootstrapPhaseError: string;
-  bootstrapPreparingTitle: string;
-  unknownSize: string;
-  runtimeLockedMessage: string;
   deleteGeneratedTitle: string;
   deleteGeneratedSubtitlePrefix: string;
   deleteGeneratedPermanentWarning: string;
@@ -118,8 +104,6 @@ interface UiStrings {
   deleteQueueAriaPrefix: string;
   downloadAudioAriaPrefix: string;
   deleteAudioAriaPrefix: string;
-  bridgeUnavailableDetail: string;
-  bootstrapInitFailed: string;
   logPauseRequested: string;
   logExtractingChapters: string;
   logJobPaused: string;
@@ -162,23 +146,6 @@ function formatFileSize(bytes: number) {
   return `${value.toFixed(1)} ${unit}`;
 }
 
-function formatBootstrapAssetName(assetId: string | undefined, uiStrings: UiStrings) {
-  if (!assetId) {
-    return uiStrings.runtimeAsset;
-  }
-
-  if (assetId === "piper") {
-    return uiStrings.piperEngine;
-  }
-  if (assetId === "ffmpeg") {
-    return "FFmpeg";
-  }
-  if (assetId === "voice-default" || assetId.startsWith("voice-")) {
-    return uiStrings.spanishVoice;
-  }
-  return assetId;
-}
-
 function humanizeSpeakerName(value: string): string {
   const cleaned = value.replace(/[_-]+/g, " ").trim();
   if (!cleaned) {
@@ -200,31 +167,8 @@ function displayVoiceName(voice: VoiceInfo): string {
   return humanizeSpeakerName(voice.id);
 }
 
-function formatBootstrapPhase(phase: BootstrapStatus["phase"], uiStrings: UiStrings) {
-  if (phase === "downloading") {
-    return uiStrings.bootstrapPhaseDownloading;
-  }
-  if (phase === "extracting") {
-    return uiStrings.bootstrapPhaseExtracting;
-  }
-  if (phase === "ready") {
-    return uiStrings.bootstrapPhaseReady;
-  }
-  return uiStrings.bootstrapPhaseError;
-}
-
 function localizeStatus(status: JobStatus, uiStrings: UiStrings) {
   return uiStrings.statusLabels[status] ?? status;
-}
-
-function localizeKnownRuntimeMessage(message: string, uiStrings: UiStrings) {
-  if (message === BOOTSTRAP_INIT_ERROR) {
-    return uiStrings.bootstrapInitFailed;
-  }
-  if (message === BRIDGE_UNAVAILABLE_ERROR) {
-    return uiStrings.bridgeUnavailableDetail;
-  }
-  return message;
 }
 
 function localizeKnownLogMessage(message: string, uiStrings: UiStrings) {
@@ -288,16 +232,6 @@ const UI_STRINGS: Record<UiLocale, UiStrings> = {
     resume: "Resume",
     cancel: "Cancel",
     estimatingEta: "Estimating...",
-    runtimeAsset: "Runtime asset",
-    piperEngine: "Piper engine",
-    spanishVoice: "Spanish voice pack (es_ES)",
-    bootstrapPhaseDownloading: "Downloading",
-    bootstrapPhaseExtracting: "Extracting",
-    bootstrapPhaseReady: "Ready",
-    bootstrapPhaseError: "Error",
-    bootstrapPreparingTitle: "Preparing Runtime Assets",
-    unknownSize: "Unknown",
-    runtimeLockedMessage: "The app is temporarily locked until required binaries and voice files finish downloading.",
     deleteGeneratedTitle: "Delete generated audio?",
     deleteGeneratedSubtitlePrefix: "You are about to delete",
     deleteGeneratedPermanentWarning: "This action is permanent. You will not be able to download this audio after deleting it.",
@@ -325,8 +259,6 @@ const UI_STRINGS: Record<UiLocale, UiStrings> = {
     deleteQueueAriaPrefix: "Delete queue item",
     downloadAudioAriaPrefix: "Download generated audio",
     deleteAudioAriaPrefix: "Delete generated audio",
-    bridgeUnavailableDetail: "Desktop runtime unavailable in this view. Use the Tauri app window started by `npm run dev`.",
-    bootstrapInitFailed: "Failed to bootstrap runtime assets",
     logPauseRequested: "Pause requested; stopping after current chunk.",
     logExtractingChapters: "Extracting EPUB chapters.",
     logJobPaused: "Job paused.",
@@ -365,16 +297,6 @@ const UI_STRINGS: Record<UiLocale, UiStrings> = {
     resume: "Reanudar",
     cancel: "Cancelar",
     estimatingEta: "Estimando...",
-    runtimeAsset: "Recurso del runtime",
-    piperEngine: "Motor Piper",
-    spanishVoice: "Paquete de voces en espanol (es_ES)",
-    bootstrapPhaseDownloading: "Descargando",
-    bootstrapPhaseExtracting: "Extrayendo",
-    bootstrapPhaseReady: "Listo",
-    bootstrapPhaseError: "Error",
-    bootstrapPreparingTitle: "Preparando recursos del runtime",
-    unknownSize: "Desconocido",
-    runtimeLockedMessage: "La app esta bloqueada temporalmente hasta que terminen de descargarse los binarios y voces requeridos.",
     deleteGeneratedTitle: "Eliminar audio generado?",
     deleteGeneratedSubtitlePrefix: "Estas a punto de eliminar",
     deleteGeneratedPermanentWarning: "Esta accion es permanente. No podras descargar este audio despues de eliminarlo.",
@@ -402,8 +324,6 @@ const UI_STRINGS: Record<UiLocale, UiStrings> = {
     deleteQueueAriaPrefix: "Eliminar elemento de la cola",
     downloadAudioAriaPrefix: "Descargar audio generado",
     deleteAudioAriaPrefix: "Eliminar audio generado",
-    bridgeUnavailableDetail: "El runtime de escritorio no esta disponible en esta vista. Usa la ventana Tauri iniciada con `npm run dev`.",
-    bootstrapInitFailed: "No se pudieron preparar los recursos del runtime",
     logPauseRequested: "Pausa solicitada; se detendra al finalizar el fragmento actual.",
     logExtractingChapters: "Extrayendo capitulos del EPUB.",
     logJobPaused: "Trabajo pausado.",
@@ -445,11 +365,10 @@ function resolveUiLocale(locales: readonly string[]): UiLocale {
 interface SortableQueueRowProps {
   job: QueueJob;
   uiStrings: UiStrings;
-  bootstrapBlockingVisible: boolean;
   onDelete: (jobId: string) => void;
 }
 
-function SortableQueueRow({ job, uiStrings, bootstrapBlockingVisible, onDelete }: SortableQueueRowProps) {
+function SortableQueueRow({ job, uiStrings, onDelete }: SortableQueueRowProps) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: job.id
   });
@@ -485,7 +404,6 @@ function SortableQueueRow({ job, uiStrings, bootstrapBlockingVisible, onDelete }
         <Button
           size="sm"
           variant="ghost"
-          disabled={bootstrapBlockingVisible}
           aria-label={`${uiStrings.deleteQueueAriaPrefix}: ${job.title}`}
           title={`${uiStrings.deleteQueueAriaPrefix}: ${job.title}`}
           onClick={() => onDelete(job.id)}
@@ -548,7 +466,6 @@ export function Dashboard() {
   const [jobDetails, setJobDetails] = useState<Record<string, JobDetail>>({});
   const [generated, setGenerated] = useState<GeneratedAudio[]>([]);
   const [playbackUrls, setPlaybackUrls] = useState<Record<string, string>>({});
-  const [bootstrapStatus, setBootstrapStatus] = useState<BootstrapStatus | null>(null);
   const [logs, setLogs] = useState<LogEvent[]>([]);
   const [activeQueueDragId, setActiveQueueDragId] = useState<string | null>(null);
   const [queueOrderIds, setQueueOrderIds] = useState<string[]>([]);
@@ -635,19 +552,12 @@ export function Dashboard() {
         api.onJobUpdated((payload) => {
           setJobDetails((current) => ({ ...current, [payload.id]: payload }));
         }),
-        api.onBootstrapStatus((payload) => setBootstrapStatus(payload)),
         api.onUpdateStatus((payload) => setUpdateStatus(payload)),
         api.onLogEvent((payload) => {
           setLogs((current) => [...current.slice(-200), payload]);
         })
       ];
 
-      void api.bootstrapAssets().catch((error: unknown) => {
-        setBootstrapStatus({
-          phase: "error",
-          message: error instanceof Error ? error.message : BOOTSTRAP_INIT_ERROR
-        });
-      });
     };
 
     const currentApi = getApi();
@@ -655,10 +565,6 @@ export function Dashboard() {
       attachApi(currentApi);
     } else {
       setBridgeReady(false);
-      setBootstrapStatus({
-        phase: "error",
-        message: BRIDGE_UNAVAILABLE_ERROR
-      });
       pollTimer = setInterval(() => {
         const api = getApi();
         if (!api) {
@@ -782,13 +688,6 @@ export function Dashboard() {
     queueOrderIdsRef.current = queueOrderIds;
   }, [queueOrderIds]);
 
-  const bootstrapBlockingVisible = Boolean(
-    bootstrapStatus && (bootstrapStatus.phase === "downloading" || bootstrapStatus.phase === "extracting")
-  );
-  const bootstrapProgressValue = bootstrapStatus?.progress === null || bootstrapStatus?.progress === undefined
-    ? (bootstrapStatus?.phase === "extracting" ? 100 : 10)
-    : Math.round(bootstrapStatus.progress * 100);
-
   const updateBottomFade = useCallback(
     (node: HTMLDivElement | null, setVisible: (value: boolean) => void) => {
       if (!node) {
@@ -802,7 +701,7 @@ export function Dashboard() {
 
   useEffect(() => {
     const api = getApi();
-    if (!api || bootstrapBlockingVisible) {
+    if (!api) {
       return;
     }
 
@@ -821,7 +720,7 @@ export function Dashboard() {
         // Keep download action usable even if preview URL generation fails.
       });
     });
-  }, [bootstrapBlockingVisible, generated, playbackUrls]);
+  }, [generated, playbackUrls]);
 
   useEffect(() => {
     const node = queueContentRef.current;
@@ -1057,15 +956,10 @@ export function Dashboard() {
           <h1 className="text-left text-2xl font-semibold">{uiStrings.appTitle}</h1>
           <div className="ml-auto flex flex-wrap items-center justify-end gap-2">
             {!bridgeReady && <Badge variant="destructive">{uiStrings.bridgeUnavailableBadge}</Badge>}
-            {bootstrapStatus?.phase === "error" && !bootstrapBlockingVisible && (
-              <Badge variant="destructive">
-                {formatBootstrapPhase(bootstrapStatus.phase, uiStrings)}: {localizeKnownRuntimeMessage(bootstrapStatus.message, uiStrings)}
-              </Badge>
-            )}
-            <Button onClick={addFiles} disabled={isBusy || bootstrapBlockingVisible}>
+            <Button onClick={addFiles} disabled={isBusy}>
               <Plus className="h-4 w-4" /> {uiStrings.addEpubFiles}
             </Button>
-            <Button className="ml-1" variant="outline" disabled={bootstrapBlockingVisible} onClick={() => setIsSettingsOpen(true)}>
+            <Button className="ml-1" variant="outline" onClick={() => setIsSettingsOpen(true)}>
               <Settings className="h-4 w-4" /> {uiStrings.settings}
             </Button>
           </div>
@@ -1157,7 +1051,6 @@ export function Dashboard() {
                               key={job.id}
                               job={job}
                               uiStrings={uiStrings}
-                              bootstrapBlockingVisible={bootstrapBlockingVisible}
                               onDelete={(jobId) => void getApi()?.deleteJob(jobId, false)}
                             />
                           ))}
@@ -1266,7 +1159,6 @@ export function Dashboard() {
                         <Button
                           size="sm"
                           variant="ghost"
-                          disabled={bootstrapBlockingVisible}
                           aria-label={`${uiStrings.downloadAudioAriaPrefix}: ${output.title}`}
                           title={`${uiStrings.downloadAudioAriaPrefix}: ${output.title}`}
                           onClick={() => void getApi()?.downloadGeneratedAudio(output.id)}
@@ -1276,7 +1168,7 @@ export function Dashboard() {
                         <Button
                           size="sm"
                           variant="ghost"
-                          disabled={bootstrapBlockingVisible || deletingGeneratedId === output.id}
+                          disabled={deletingGeneratedId === output.id}
                           aria-label={`${uiStrings.deleteAudioAriaPrefix}: ${output.title}`}
                           title={`${uiStrings.deleteAudioAriaPrefix}: ${output.title}`}
                           onClick={() => setGeneratedDeleteTarget(output)}
@@ -1305,31 +1197,6 @@ export function Dashboard() {
           </Card>
         </section>
       </div>
-      {bootstrapBlockingVisible && bootstrapStatus && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/70 backdrop-blur-sm">
-          <Card className="w-[min(560px,92vw)] border-border/80 bg-card/95 shadow-2xl">
-            <CardHeader className="pb-2 text-center">
-              <CardTitle className="text-base">
-                {uiStrings.bootstrapPreparingTitle} ({bootstrapStatus.itemIndex ?? 0}/{bootstrapStatus.totalItems ?? 0})
-              </CardTitle>
-              <CardDescription>
-                {formatBootstrapPhase(bootstrapStatus.phase, uiStrings)} {formatBootstrapAssetName(bootstrapStatus.assetId, uiStrings)}
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              <Progress value={bootstrapProgressValue} />
-              <div className="flex items-center justify-between text-xs text-muted-foreground">
-                <span>{bootstrapProgressValue}%</span>
-                <span>
-                  {typeof bootstrapStatus.downloadedBytes === "number" ? formatFileSize(bootstrapStatus.downloadedBytes) : "0 B"}
-                  {" / "}
-                  {typeof bootstrapStatus.totalBytes === "number" ? formatFileSize(bootstrapStatus.totalBytes) : uiStrings.unknownSize}
-                </span>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-      )}
       {generatedDeleteTarget && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center bg-background/70 backdrop-blur-sm">
           <Card className="w-[min(560px,92vw)] border-border/80 bg-card/95 shadow-2xl">

@@ -84,36 +84,6 @@ export interface VoiceInfo {
   attribution?: string | null;
 }
 
-export interface BootstrapStatus {
-  phase: "downloading" | "extracting" | "ready" | "error";
-  message: string;
-  assetId?: string;
-  itemIndex?: number;
-  totalItems?: number;
-  progress?: number | null;
-  downloadedBytes?: number;
-  totalBytes?: number | null;
-}
-
-export interface RuntimeAssets {
-  piperExe: string;
-  ffmpegExe: string;
-  defaultVoiceModel: string;
-  defaultVoiceConfig: string | null;
-  voicesById: Record<string, RuntimeVoiceAsset>;
-  source: "env" | "cache" | "download";
-}
-
-export interface RuntimeVoiceAsset {
-  id: string;
-  name: string;
-  locale: string;
-  speaker: string;
-  quality: string;
-  modelPath: string;
-  configPath: string | null;
-}
-
 export interface AppSettings {
   defaultOutputDir: string;
   defaultVoiceId: string;
@@ -149,44 +119,9 @@ export interface QueueManagerEvents {
   jobUpdated: (job: JobDetail) => void;
   generatedUpdated: (outputs: OutputRow[]) => void;
   logEvent: (event: QueueLogEvent) => void;
-  bootstrapStatusUpdated: (status: BootstrapStatus) => void;
   settingsUpdated: (settings: Partial<AppSettings>) => void;
 }
 
 export interface RunningProcessRef {
   currentChild: ChildProcessWithoutNullStreams | null;
-}
-
-export interface SidecarArchive {
-  id: string;
-  url: string;
-  archiveType?: "none" | "zip" | "tar.gz" | "tgz" | "tar.xz" | "tar";
-  extractTo: string;
-}
-
-export interface SidecarPlatformConfig {
-  archives: SidecarArchive[];
-  paths: {
-    piperExe: string;
-    ffmpegExe: string;
-    defaultVoiceModel: string;
-    defaultVoiceConfig?: string;
-    voicesRoot?: string;
-  };
-  voices?: SidecarVoiceDefinition[];
-}
-
-export interface SidecarManifest {
-  version: string;
-  platforms: Record<string, SidecarPlatformConfig>;
-}
-
-export interface SidecarVoiceDefinition {
-  id: string;
-  name: string;
-  locale: string;
-  speaker: string;
-  quality: string;
-  modelPath: string;
-  configPath?: string;
 }

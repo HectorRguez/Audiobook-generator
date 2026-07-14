@@ -10,12 +10,12 @@ use std::{
     time::Instant,
 };
 use tauri::{AppHandle, Emitter, Manager};
-use tokio::sync::{Mutex as AsyncMutex, RwLock};
+use tokio::sync::Mutex as AsyncMutex;
 
 use crate::{
     audio,
     epub::extract_epub,
-    models::{AppSettings, BootstrapStatus, JobDetail, QueueJob, QueueLogEvent, VoiceInfo},
+    models::{AppSettings, JobDetail, QueueJob, QueueLogEvent, VoiceInfo},
     piper_http::PiperHttpEngine,
     repository::Repository,
     runtime::{load_runtime_assets, RuntimeAssets},
@@ -26,7 +26,7 @@ use crate::{
 pub struct QueueManager {
     app: AppHandle,
     repo: Arc<Mutex<Repository>>,
-    runtime: Arc<RwLock<Option<RuntimeAssets>>>,
+    runtime: Arc<RuntimeAssets>,
     piper: Arc<AsyncMutex<PiperHttpEngine>>,
     is_pumping: Arc<AtomicBool>,
     pause_requested: Arc<Mutex<HashSet<String>>>,
@@ -41,10 +41,11 @@ impl QueueManager {
             app_data.join("db").join("app.sqlite"),
             documents.join("Audiobooks"),
         )?;
+        let runtime = load_runtime_assets(&app)?;
         Ok(Self {
             app,
             repo: Arc::new(Mutex::new(repo)),
-            runtime: Arc::new(RwLock::new(None)),
+            runtime: Arc::new(runtime),
             piper: Arc::new(AsyncMutex::new(PiperHttpEngine::new())),
             is_pumping: Arc::new(AtomicBool::new(false)),
             pause_requested: Arc::new(Mutex::new(HashSet::new())),
@@ -56,46 +57,8 @@ impl QueueManager {
         self.repo.lock().expect("repository mutex poisoned")
     }
 
-    pub async fn bootstrap_assets(&self) -> Result<RuntimeAssets> {
-        if let Some(runtime) = self.runtime.read().await.clone() {
-            return Ok(runtime);
-        }
-        match load_runtime_assets(&self.app) {
-            Ok(runtime) => {
-                *self.runtime.write().await = Some(runtime.clone());
-                self.emit_bootstrap(BootstrapStatus {
-                    phase: "ready".to_string(),
-                    message: format!("Runtime assets ready ({}).", runtime.target),
-                    asset_id: None,
-                    item_index: None,
-                    total_items: None,
-                    progress: Some(1.0),
-                    downloaded_bytes: None,
-                    total_bytes: None,
-                });
-                Ok(runtime)
-            }
-            Err(error) => {
-                self.emit_bootstrap(BootstrapStatus {
-                    phase: "error".to_string(),
-                    message: error.to_string(),
-                    asset_id: None,
-                    item_index: None,
-                    total_items: None,
-                    progress: None,
-                    downloaded_bytes: None,
-                    total_bytes: None,
-                });
-                Err(error)
-            }
-        }
-    }
-
-    pub async fn list_voices(&self) -> Vec<VoiceInfo> {
-        match self.bootstrap_assets().await {
-            Ok(runtime) => runtime.voice_infos(),
-            Err(_) => Vec::new(),
-        }
+    pub fn list_voices(&self) -> Vec<VoiceInfo> {
+        self.runtime.voice_infos()
     }
 
     pub fn emit_queue(&self) {
@@ -114,10 +77,6 @@ impl QueueManager {
         if let Ok(Some(job)) = self.repo().get_job_detail(job_id) {
             let _ = self.app.emit("jobUpdated", job);
         }
-    }
-
-    pub fn emit_bootstrap(&self, status: BootstrapStatus) {
-        let _ = self.app.emit("bootstrapStatusUpdated", status);
     }
 
     pub fn emit_settings(&self, settings: AppSettings) {
@@ -195,7 +154,7 @@ impl QueueManager {
         self.emit_queue();
         self.emit_job(&job.id);
 
-        let runtime = self.bootstrap_assets().await?;
+        let runtime = Arc::clone(&self.runtime);
         let voice_id = if runtime.voice(&job.voice_id).is_some() {
             job.voice_id.clone()
         } else {

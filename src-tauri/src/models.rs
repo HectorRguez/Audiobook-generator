@@ -76,25 +76,6 @@ pub struct GeneratedAudio {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct BootstrapStatus {
-    pub phase: String,
-    pub message: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub asset_id: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub item_index: Option<i64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub total_items: Option<i64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub progress: Option<f64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub downloaded_bytes: Option<i64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub total_bytes: Option<i64>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
 pub struct QueueLogEvent {
     pub job_id: String,
     pub level: String,

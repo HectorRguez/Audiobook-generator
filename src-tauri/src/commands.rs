@@ -6,7 +6,6 @@ use tauri_plugin_dialog::DialogExt;
 use crate::{
     models::{AppSettings, GeneratedAudio, JobDetail, QueueJob, VoiceInfo},
     queue::QueueManager,
-    runtime::RuntimeAssets,
 };
 
 type CommandResult<T> = Result<T, String>;
@@ -31,11 +30,6 @@ pub fn pick_epub_files(app: AppHandle) -> CommandResult<Vec<String>> {
                 .map_err(command_error)
         })
         .collect()
-}
-
-#[tauri::command]
-pub async fn bootstrap_assets(manager: State<'_, QueueManager>) -> CommandResult<RuntimeAssets> {
-    manager.bootstrap_assets().await.map_err(command_error)
 }
 
 #[tauri::command]
@@ -214,8 +208,8 @@ pub fn set_settings(
 }
 
 #[tauri::command]
-pub async fn list_voices(manager: State<'_, QueueManager>) -> CommandResult<Vec<VoiceInfo>> {
-    Ok(manager.list_voices().await)
+pub fn list_voices(manager: State<'_, QueueManager>) -> CommandResult<Vec<VoiceInfo>> {
+    Ok(manager.list_voices())
 }
 
 #[allow(dead_code)]

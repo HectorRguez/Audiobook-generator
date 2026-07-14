@@ -127,15 +127,17 @@ fn target_key() -> String {
 
 fn candidate_runtime_dirs(app: &AppHandle) -> Vec<PathBuf> {
     let mut dirs = Vec::new();
-    if let Ok(value) = env::var("AUDIOBOOK_RUNTIME_DIR") {
-        dirs.push(PathBuf::from(value));
-    }
     if let Ok(resource_dir) = app.path().resource_dir() {
         dirs.push(resource_dir.join("runtime").join(target_key()));
         dirs.push(resource_dir.join("runtime"));
     }
-    dirs.push(PathBuf::from("runtime").join("dist").join(target_key()));
-    dirs.push(PathBuf::from("runtime").join("dist").join("dev"));
+    #[cfg(debug_assertions)]
+    {
+        if let Ok(value) = env::var("AUDIOBOOK_RUNTIME_DIR") {
+            dirs.push(PathBuf::from(value));
+        }
+        dirs.push(PathBuf::from("runtime").join("dist").join(target_key()));
+    }
     dirs
 }
 
