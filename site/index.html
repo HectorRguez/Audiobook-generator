@@ -117,6 +117,11 @@
       margin: 24px 0 0;
       padding: 12px 0;
     }
+    .local-note strong {
+      display: block;
+      margin-bottom: 2px;
+    }
+    .local-note p { margin: 0; }
     audio {
       width: 100%;
       margin-top: 8px;
@@ -147,7 +152,10 @@
     </nav>
   </header>
   <p id="intro"></p>
-  <p class="local-note" id="local-note"></p>
+  <div class="local-note">
+    <strong id="local-note-title"></strong>
+    <p id="local-note"></p>
+  </div>
 
   <h2 id="downloads-heading"></h2>
   <div id="downloads"></div>
@@ -164,6 +172,7 @@
         pageTitle: "Audiobook Generator",
         languageLabel: "Language",
         intro: 'Turn English and Spanish EPUB files into local audiobooks with bundled <a href="https://github.com/OHF-Voice/piper1-gpl">Piper</a> voices.',
+        localNoteTitle: "Private. Local. Free.",
         localNote: "The app runs on your computer and does not upload your books. It is free to use, with no account or subscription.",
         downloadsHeading: "Downloads",
         voicesHeading: "Voice demos",
@@ -186,6 +195,7 @@
         pageTitle: "Audiobook Generator",
         languageLabel: "Idioma",
         intro: 'Convierte archivos EPUB en español e inglés en audiolibros locales con las voces incluidas de <a href="https://github.com/OHF-Voice/piper1-gpl">Piper</a>.',
+        localNoteTitle: "Privado. Local. Gratis.",
         localNote: "La aplicación funciona en tu ordenador y no sube tus libros. Es gratuita y no requiere cuenta ni suscripción.",
         downloadsHeading: "Descargas",
         voicesHeading: "Muestras de voz",
@@ -225,6 +235,7 @@
         button.setAttribute("aria-pressed", String(button.dataset.language === language));
       });
       document.getElementById("intro").innerHTML = copy.intro;
+      document.getElementById("local-note-title").textContent = copy.localNoteTitle;
       document.getElementById("local-note").textContent = copy.localNote;
       document.getElementById("downloads-heading").textContent = copy.downloadsHeading;
       document.getElementById("voices-heading").textContent = copy.voicesHeading;
