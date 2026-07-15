@@ -1,8 +1,7 @@
 use anyhow::{anyhow, Context, Result};
-use html_escape::decode_html_entities;
+use html2text::render::TrivialDecorator;
 use quick_xml::events::Event;
 use quick_xml::Reader;
-use regex::Regex;
 use std::{
     collections::HashMap,
     fs,
@@ -145,21 +144,11 @@ fn resolve_epub_path(opf_path: &str, href: &str) -> String {
     base.join(href).to_string_lossy().replace('\\', "/")
 }
 
-fn strip_html(html: &str) -> String {
-    let without_scripts = Regex::new(r"(?is)<script[^>]*>.*?</script>")
-        .unwrap()
-        .replace_all(html, " ");
-    let without_styles = Regex::new(r"(?is)<style[^>]*>.*?</style>")
-        .unwrap()
-        .replace_all(&without_scripts, " ");
-    let block_separated = Regex::new(r"(?i)</(p|div|section|article|h[1-6]|li)>")
-        .unwrap()
-        .replace_all(&without_styles, "\n\n");
-    let no_tags = Regex::new(r"(?s)<[^>]+>")
-        .unwrap()
-        .replace_all(&block_separated, " ");
-    let decoded = decode_html_entities(no_tags.as_ref());
-    normalize_text(decoded.as_ref())
+fn html_to_text(html: &str) -> Result<String> {
+    let rendered =
+        html2text::from_read_with_decorator(html.as_bytes(), usize::MAX, TrivialDecorator::new())
+            .context("Failed to render EPUB HTML as text")?;
+    Ok(normalize_text(&rendered))
 }
 
 fn chapter_title(item: &ManifestItem, fallback_index: usize) -> String {
@@ -206,7 +195,7 @@ pub fn extract_epub(epub_path: &Path, work_dir: &Path) -> Result<EpubExtractionR
         let Ok(html) = read_zip_entry(&mut archive, &entry_path) else {
             continue;
         };
-        let text = strip_html(&html);
+        let text = html_to_text(&html)?;
         if text.chars().filter(|ch| ch.is_alphabetic()).count() < 20 {
             continue;
         }
@@ -256,5 +245,15 @@ mod tests {
         assert_eq!(parsed.title, "Book");
         assert_eq!(parsed.author.as_deref(), Some("Author"));
         assert_eq!(parsed.language.as_deref(), Some("en-GB"));
+    }
+
+    #[test]
+    fn renders_html_with_structure_and_without_markup() {
+        let text = html_to_text(
+            r#"<html><head><style>.hidden { display: none; }</style></head><body><p>Uno <em>dos</em>.</p><p>Tres &amp; cuatro.<br>Fin.</p><script>ignored()</script></body></html>"#,
+        )
+        .unwrap();
+
+        assert_eq!(text, "Uno dos.\n\nTres & cuatro.\nFin.");
     }
 }

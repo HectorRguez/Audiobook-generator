@@ -1,4 +1,4 @@
-use anyhow::{anyhow, Result};
+use anyhow::{anyhow, Context, Result};
 use std::{
     collections::HashSet,
     fs,
@@ -16,10 +16,10 @@ use crate::{
     audio,
     epub::extract_epub,
     models::{AppSettings, JobDetail, QueueJob, QueueLogEvent, VoiceInfo},
+    narration::{build_chapter_plan, NarrationSegment},
     piper_http::PiperHttpEngine,
     repository::Repository,
     runtime::{load_runtime_assets, RuntimeAssets},
-    text::split_into_chunks,
 };
 
 #[derive(Clone)]
@@ -237,8 +237,8 @@ impl QueueManager {
         processed_before_chapter: i64,
     ) -> Result<ChapterProcessResult> {
         let text = fs::read_to_string(text_path)?;
-        let chunks = split_into_chunks(&text, 800, 2000);
-        if chunks.is_empty() {
+        let plan = build_chapter_plan(&text);
+        if plan.speech_segment_count == 0 {
             return Ok(ChapterProcessResult { processed_chars: 0 });
         }
 
@@ -247,52 +247,82 @@ impl QueueManager {
             .join("chunks")
             .join(chapter_idx.to_string());
         fs::create_dir_all(&chapter_dir)?;
+        let silence_dir = work_dir.join("audio").join("silence");
         let mut wavs = Vec::new();
         let mut processed = 0_i64;
+        let mut sample_rate = voice.sample_rate;
         let started = Instant::now();
 
-        for (chunk_idx, chunk) in chunks.iter().enumerate() {
+        for segment in &plan.segments {
             self.check_control(&job.id)?;
-            let chunk_path = chapter_dir.join(format!("chunk_{chunk_idx:05}.wav"));
-            {
-                let mut piper = self.piper.lock().await;
-                piper.ensure_started(runtime, voice).await?;
-                piper.synthesize_to_file(chunk, &chunk_path).await?;
-            }
+            match segment {
+                NarrationSegment::Speech {
+                    speech_index, text, ..
+                } => {
+                    let chunk_path = chapter_dir.join(format!("chunk_{speech_index:05}.wav"));
+                    let mut piper = self.piper.lock().await;
+                    piper.ensure_started(runtime, voice).await?;
+                    piper.synthesize_to_file(text, &chunk_path).await?;
+                    drop(piper);
 
-            processed += chunk.len() as i64;
-            let total_processed = processed_before_chapter + processed;
-            let elapsed_seconds = started.elapsed().as_secs_f64().max(0.001);
-            let chars_per_second = processed as f64 / elapsed_seconds;
-            let remaining = (job.total_chars - total_processed).max(0) as f64;
-            let eta = if chars_per_second > 0.0 {
-                Some((remaining / chars_per_second).ceil() as i64)
-            } else {
-                None
-            };
-            let progress = if job.total_chars > 0 {
-                (total_processed as f64 / job.total_chars as f64).min(0.96)
-            } else {
-                0.0
-            };
-            self.repo().update_chapter_processing(
-                &job.id,
-                chapter_idx,
-                chunk_idx as i64 + 1,
-                chunks.len() as i64,
-            )?;
-            self.repo().update_job_progress(
-                &job.id,
-                "processing",
-                chapter_idx,
-                total_processed,
-                job.total_chars,
-                progress,
-                eta,
-            )?;
-            self.emit_queue();
-            self.emit_job(&job.id);
-            wavs.push(chunk_path);
+                    if sample_rate.is_none() {
+                        sample_rate = Some(
+                            audio::sample_rate(&runtime.ffprobe_exe, &chunk_path)
+                                .await
+                                .context("Failed to determine Piper WAV sample rate")?,
+                        );
+                    }
+
+                    processed += text.len() as i64;
+                    let total_processed = processed_before_chapter + processed;
+                    let elapsed_seconds = started.elapsed().as_secs_f64().max(0.001);
+                    let chars_per_second = processed as f64 / elapsed_seconds;
+                    let remaining = (job.total_chars - total_processed).max(0) as f64;
+                    let eta = if chars_per_second > 0.0 {
+                        Some((remaining / chars_per_second).ceil() as i64)
+                    } else {
+                        None
+                    };
+                    let progress = if job.total_chars > 0 {
+                        (total_processed as f64 / job.total_chars as f64).min(0.96)
+                    } else {
+                        0.0
+                    };
+                    self.repo().update_chapter_processing(
+                        &job.id,
+                        chapter_idx,
+                        *speech_index as i64 + 1,
+                        plan.speech_segment_count as i64,
+                    )?;
+                    self.repo().update_job_progress(
+                        &job.id,
+                        "processing",
+                        chapter_idx,
+                        total_processed,
+                        job.total_chars,
+                        progress,
+                        eta,
+                    )?;
+                    self.emit_queue();
+                    self.emit_job(&job.id);
+                    wavs.push(chunk_path);
+                }
+                NarrationSegment::Silence { duration_ms, .. } => {
+                    let rate = sample_rate.ok_or_else(|| {
+                        anyhow!("Unable to determine voice sample rate for narration pauses.")
+                    })?;
+                    let silence_path =
+                        silence_dir.join(format!("silence_{rate}_{duration_ms}ms.wav"));
+                    audio::ensure_silence_wav(
+                        &runtime.ffmpeg_exe,
+                        &silence_path,
+                        rate,
+                        *duration_ms,
+                    )
+                    .await?;
+                    wavs.push(silence_path);
+                }
+            }
         }
 
         let chapter_wav_dir = work_dir.join("audio").join("chapters");
@@ -310,7 +340,7 @@ impl QueueManager {
         self.repo().finish_chapter(
             &job.id,
             chapter_idx,
-            chunks.len() as i64,
+            plan.speech_segment_count as i64,
             duration,
             &chapter_wav,
         )?;

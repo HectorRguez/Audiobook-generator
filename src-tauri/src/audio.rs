@@ -2,8 +2,7 @@ use anyhow::{anyhow, Context, Result};
 use sanitize_filename::sanitize;
 use serde_json::Value;
 use std::{
-    env,
-    fs,
+    env, fs,
     path::{Path, PathBuf},
     process::Stdio,
 };
@@ -117,6 +116,38 @@ pub async fn concat_wavs(
     Ok(())
 }
 
+pub async fn ensure_silence_wav(
+    ffmpeg: &Path,
+    output: &Path,
+    sample_rate: u32,
+    duration_ms: u64,
+) -> Result<()> {
+    if output.is_file() {
+        return Ok(());
+    }
+    if let Some(parent) = output.parent() {
+        fs::create_dir_all(parent)?;
+    }
+
+    let duration_seconds = format!("{:.3}", duration_ms as f64 / 1000.0);
+    let mut command = runtime_tool_command(ffmpeg);
+    let status = command
+        .args(["-y", "-loglevel", "error", "-f", "lavfi", "-i"])
+        .arg(format!("anullsrc=r={sample_rate}:cl=mono"))
+        .arg("-t")
+        .arg(duration_seconds)
+        .args(["-c:a", "pcm_s16le"])
+        .arg(output)
+        .stdin(Stdio::null())
+        .status()
+        .await
+        .context("Failed to generate silence WAV")?;
+    if !status.success() {
+        return Err(anyhow!("ffmpeg silence generation failed with {status}"));
+    }
+    Ok(())
+}
+
 pub async fn encode_final_audio(
     ffmpeg: &Path,
     input_wav: &Path,
@@ -178,4 +209,36 @@ pub async fn duration_ms(ffprobe: &Path, input: &Path) -> Result<i64> {
         .and_then(|duration| duration.parse::<f64>().ok())
         .unwrap_or(0.0);
     Ok((seconds * 1000.0).round() as i64)
+}
+
+pub async fn sample_rate(ffprobe: &Path, input: &Path) -> Result<u32> {
+    let mut command = runtime_tool_command(ffprobe);
+    let output = command
+        .args([
+            "-v",
+            "error",
+            "-select_streams",
+            "a:0",
+            "-show_entries",
+            "stream=sample_rate",
+            "-of",
+            "json",
+        ])
+        .arg(input)
+        .stdin(Stdio::null())
+        .output()
+        .await
+        .context("Failed to inspect WAV sample rate")?;
+    if !output.status.success() {
+        return Err(anyhow!("ffprobe sample-rate inspection failed"));
+    }
+    let parsed: Value = serde_json::from_slice(&output.stdout)?;
+    parsed
+        .get("streams")
+        .and_then(Value::as_array)
+        .and_then(|streams| streams.first())
+        .and_then(|stream| stream.get("sample_rate"))
+        .and_then(Value::as_str)
+        .and_then(|rate| rate.parse::<u32>().ok())
+        .ok_or_else(|| anyhow!("WAV has no readable sample rate"))
 }

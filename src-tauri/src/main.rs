@@ -3,6 +3,7 @@ mod commands;
 mod epub;
 mod language;
 mod models;
+mod narration;
 mod piper_http;
 mod queue;
 mod repository;

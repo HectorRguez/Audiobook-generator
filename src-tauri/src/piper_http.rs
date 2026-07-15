@@ -12,7 +12,10 @@ use tokio::{
     time::sleep,
 };
 
-use crate::runtime::{ResolvedVoiceAsset, RuntimeAssets};
+use crate::{
+    narration::SENTENCE_SILENCE_MS,
+    runtime::{ResolvedVoiceAsset, RuntimeAssets},
+};
 
 #[derive(Debug)]
 pub struct PiperHttpEngine {
@@ -62,6 +65,8 @@ impl PiperHttpEngine {
             .arg("127.0.0.1")
             .arg("--port")
             .arg(port.to_string())
+            .arg("--sentence-silence")
+            .arg(format!("{:.3}", SENTENCE_SILENCE_MS as f64 / 1000.0))
             .stdin(Stdio::null())
             .stdout(Stdio::null())
             .stderr(Stdio::null());
@@ -152,11 +157,12 @@ mod tests {
         match allocate_loopback_port() {
             Ok(port) => assert!(port > 0),
             Err(error) => {
-                let is_permission_denied = error
-                    .downcast_ref::<std::io::Error>()
-                    .is_some_and(|io_error| {
-                        io_error.kind() == std::io::ErrorKind::PermissionDenied
-                    });
+                let is_permission_denied =
+                    error
+                        .downcast_ref::<std::io::Error>()
+                        .is_some_and(|io_error| {
+                            io_error.kind() == std::io::ErrorKind::PermissionDenied
+                        });
                 if !is_permission_denied {
                     panic!("failed to allocate loopback port: {error}");
                 }
