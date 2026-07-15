@@ -18,8 +18,12 @@ jobs:
         include:
           - target: win32-x64
             os: windows-latest
+            ffmpeg_bin: .cache/runtime-tools/win32-x64/ffmpeg.exe
+            ffprobe_bin: .cache/runtime-tools/win32-x64/ffprobe.exe
           - target: linux-x64
             os: ubuntu-latest
+            ffmpeg_bin: ""
+            ffprobe_bin: ""
 
     runs-on: ${{ matrix.os }}
     permissions:
@@ -51,13 +55,19 @@ jobs:
             patchelf \
             ffmpeg
 
-      - name: Install Windows ffmpeg
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: choco install ffmpeg -y
-
       - name: Install dependencies
         run: npm ci
+
+      - name: Restore pinned Windows FFmpeg
+        if: runner.os == 'Windows'
+        uses: actions/cache@v4
+        with:
+          path: .cache/runtime-tools
+          key: runtime-tools-${{ matrix.target }}-${{ hashFiles('runtime/ffmpeg-assets.json') }}
+
+      - name: Prepare pinned Windows FFmpeg
+        if: runner.os == 'Windows'
+        run: npm run prepare:ffmpeg -- --target ${{ matrix.target }}
 
       - name: Set tagged release version
         if: startsWith(github.ref, 'refs/tags/v')
@@ -81,6 +91,8 @@ jobs:
       - name: Prepare Piper runtime
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          FFMPEG_BIN: ${{ matrix.ffmpeg_bin }}
+          FFPROBE_BIN: ${{ matrix.ffprobe_bin }}
         run: npm run build:runtime -- --target ${{ matrix.target }}
 
       - name: Smoke test Piper runtime
