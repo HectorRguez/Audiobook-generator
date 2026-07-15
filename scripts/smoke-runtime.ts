@@ -69,7 +69,9 @@ function spawnServer(
     "--host",
     "127.0.0.1",
     "--port",
-    String(port)
+    String(port),
+    "--sentence-silence",
+    "0.25"
   ], {
     stdio: ["ignore", "pipe", "pipe"],
     windowsHide: true
