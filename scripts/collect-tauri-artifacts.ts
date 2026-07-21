@@ -65,6 +65,16 @@ async function sha256File(filePath: string): Promise<string> {
   return hash.digest("hex");
 }
 
+async function readAppVersion(): Promise<string> {
+  const packageJson = JSON.parse(await fs.readFile("package.json", "utf8")) as {
+    version?: unknown;
+  };
+  if (typeof packageJson.version !== "string" || !packageJson.version.trim()) {
+    throw new Error("package.json is missing a valid version.");
+  }
+  return packageJson.version;
+}
+
 async function main(): Promise<void> {
   const target = parseArg("target");
   const bundleRoot = parseArg("bundle-root", path.join("src-tauri", "target", "release", "bundle"));
@@ -78,15 +88,20 @@ async function main(): Promise<void> {
   await fs.rm(outDir, { recursive: true, force: true });
   await fs.mkdir(outDir, { recursive: true });
   const files = await walk(bundleRoot);
+  const appVersion = await readAppVersion();
   const checksumLines: string[] = [];
 
   for (const spec of specs) {
-    const candidates = files
-      .filter((filePath) => filePath.endsWith(spec.extension))
+    const extensionCandidates = files.filter((filePath) => filePath.endsWith(spec.extension));
+    const candidates = extensionCandidates
+      .filter((filePath) => path.basename(filePath).includes(`_${appVersion}_`))
       .sort((a, b) => a.localeCompare(b));
     const source = candidates[0];
     if (!source) {
-      throw new Error(`No ${spec.extension} bundle found under ${bundleRoot}`);
+      const available = extensionCandidates.map((filePath) => path.basename(filePath)).join(", ");
+      throw new Error(
+        `No ${spec.extension} bundle for version ${appVersion} found under ${bundleRoot}. Available: ${available || "none"}`
+      );
     }
 
     const destination = path.join(outDir, spec.fileName);
