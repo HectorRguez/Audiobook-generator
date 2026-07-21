@@ -18,7 +18,7 @@
     "build:updater-manifest": "node --import tsx scripts/build-updater-manifest.ts",
     "build:site": "node --import tsx scripts/build-site.ts",
     "lint": "cd renderer && next lint",
-    "test": "node --import tsx --test \"core/**/*.test.ts\"",
+    "test": "cargo test --manifest-path src-tauri/Cargo.toml",
     "typecheck": "tsc -p tsconfig.scripts.json && cd renderer && tsc --noEmit"
   },
   "dependencies": {
@@ -32,11 +32,7 @@
     "@tauri-apps/plugin-opener": "^2.5.4",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
-    "epub2": "^3.0.2",
-    "fast-xml-parser": "^5.2.5",
-    "html-to-text": "^9.0.5",
     "lucide-react": "^0.511.0",
-    "moving-averages": "^4.0.6",
     "next": "15.3.2",
     "pretty-ms": "^9.2.0",
     "react": "19.0.0",

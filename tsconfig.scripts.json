@@ -6,6 +6,6 @@
     "types": ["node"],
     "noEmit": true
   },
-  "include": ["core/**/*.ts", "scripts/**/*.ts"],
-  "exclude": ["node_modules", "core/**/*.test.ts"]
+  "include": ["scripts/**/*.ts"],
+  "exclude": ["node_modules"]
 }

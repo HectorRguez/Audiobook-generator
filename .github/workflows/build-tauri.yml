@@ -76,14 +76,11 @@ jobs:
       - name: Typecheck
         run: npm run typecheck
 
-      - name: Unit tests
+      - name: Rust unit tests
         run: npm test
 
       - name: Lint
         run: npm run lint
-
-      - name: Rust tests
-        run: cargo test --manifest-path src-tauri/Cargo.toml
 
       - name: Rust clippy
         run: cargo clippy --manifest-path src-tauri/Cargo.toml -- -D warnings

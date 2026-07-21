@@ -57,4 +57,20 @@ mod tests {
     fn preserves_paragraphs_while_normalizing() {
         assert_eq!(normalize_text("Uno  dos.\n\n\nTres"), "Uno dos.\n\nTres");
     }
+
+    #[test]
+    fn joins_hyphenated_line_breaks_without_damaging_unicode() {
+        assert_eq!(
+            normalize_text("Una palabra multi-\nlingue y una canci\u{00f3}n-\n\u{00fa}nica."),
+            "Una palabra multilingue y una canci\u{00f3}n\u{00fa}nica."
+        );
+    }
+
+    #[test]
+    fn removes_standalone_page_numbers() {
+        assert_eq!(
+            normalize_text("Primer parrafo.\n\n42\n\nSegundo parrafo."),
+            "Primer parrafo.\n\nSegundo parrafo."
+        );
+    }
 }
