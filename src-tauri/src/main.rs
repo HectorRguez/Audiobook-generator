@@ -26,7 +26,8 @@ fn main() {
     builder
         .setup(|app| {
             let manager = QueueManager::new(app.handle().clone())?;
-            app.manage(manager);
+            app.manage(manager.clone());
+            manager.start_pump();
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
