@@ -2,21 +2,24 @@ import fs from "node:fs/promises";
 import fsSync from "node:fs";
 import path from "node:path";
 import { createHash } from "node:crypto";
+import { spawn } from "node:child_process";
 import extractZip from "extract-zip";
 
 interface FfmpegAsset {
   version: string;
   archiveName: string;
+  archiveType: "zip" | "tar.xz";
   url: string;
   sha256: string;
 }
 
 interface PreparedAssetManifest {
   version: string;
+  archiveType: "zip" | "tar.xz";
   archiveUrl: string;
   archiveSha256: string;
   ffmpegSha256: string;
-  ffprobeSha256: string;
+  licenseSha256: string;
 }
 
 const DOWNLOAD_ATTEMPTS = 4;
@@ -54,7 +57,7 @@ async function loadAsset(target: string): Promise<FfmpegAsset> {
   }
 
   const candidate = document[target];
-  const fields: Array<keyof FfmpegAsset> = ["version", "archiveName", "url", "sha256"];
+  const fields: Array<keyof FfmpegAsset> = ["version", "archiveName", "archiveType", "url", "sha256"];
   for (const field of fields) {
     if (typeof candidate[field] !== "string" || candidate[field].trim() === "") {
       throw new Error(`runtime/ffmpeg-assets.json ${target}.${field} must be a non-empty string`);
@@ -62,6 +65,9 @@ async function loadAsset(target: string): Promise<FfmpegAsset> {
   }
 
   const asset = candidate as unknown as FfmpegAsset;
+  if (!["zip", "tar.xz"].includes(asset.archiveType)) {
+    throw new Error(`Unsupported FFmpeg archive type for ${target}: ${asset.archiveType}`);
+  }
   if (path.basename(asset.archiveName) !== asset.archiveName) {
     throw new Error(`FFmpeg archiveName must not contain a path: ${asset.archiveName}`);
   }
@@ -156,24 +162,39 @@ async function findFile(root: string, fileName: string): Promise<string | null> 
   return null;
 }
 
+function run(command: string, args: string[]): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const child = spawn(command, args, { stdio: "inherit", shell: false });
+    child.on("error", reject);
+    child.on("close", (code) => {
+      if (code === 0) {
+        resolve();
+      } else {
+        reject(new Error(`${command} ${args.join(" ")} failed with ${code}`));
+      }
+    });
+  });
+}
+
 async function isPreparedAssetValid(
   outputDir: string,
   asset: FfmpegAsset
 ): Promise<boolean> {
   const manifestPath = path.join(outputDir, "asset-manifest.json");
-  const ffmpegPath = path.join(outputDir, "ffmpeg.exe");
-  const ffprobePath = path.join(outputDir, "ffprobe.exe");
-  if (![manifestPath, ffmpegPath, ffprobePath].every((candidate) => fsSync.existsSync(candidate))) {
+  const ffmpegPath = path.join(outputDir, process.platform === "win32" ? "ffmpeg.exe" : "ffmpeg");
+  const licensePath = path.join(outputDir, "FFmpeg-LICENSE.txt");
+  if (![manifestPath, ffmpegPath, licensePath].every((candidate) => fsSync.existsSync(candidate))) {
     return false;
   }
 
   try {
     const manifest = JSON.parse(await fs.readFile(manifestPath, "utf8")) as PreparedAssetManifest;
     return manifest.version === asset.version
+      && manifest.archiveType === asset.archiveType
       && manifest.archiveUrl === asset.url
       && manifest.archiveSha256 === asset.sha256
       && manifest.ffmpegSha256 === await sha256File(ffmpegPath)
-      && manifest.ffprobeSha256 === await sha256File(ffprobePath);
+      && manifest.licenseSha256 === await sha256File(licensePath);
   } catch {
     return false;
   }
@@ -197,26 +218,35 @@ async function main(): Promise<void> {
   await fs.mkdir(extractDir, { recursive: true });
 
   try {
-    await extractZip(archivePath, { dir: extractDir });
+    if (asset.archiveType === "zip") {
+      await extractZip(archivePath, { dir: extractDir });
+    } else {
+      await run("tar", ["-xJf", archivePath, "-C", extractDir]);
+    }
     const ffmpegSource = await findFile(extractDir, "ffmpeg.exe");
-    const ffprobeSource = await findFile(extractDir, "ffprobe.exe");
-    if (!ffmpegSource || !ffprobeSource) {
-      throw new Error(`FFmpeg archive does not contain both ffmpeg.exe and ffprobe.exe`);
+    const portableFfmpegSource = ffmpegSource || await findFile(extractDir, "ffmpeg");
+    const licenseSource = await findFile(extractDir, "LICENSE.txt");
+    if (!portableFfmpegSource || !licenseSource) {
+      throw new Error(`FFmpeg archive does not contain the FFmpeg binary and LICENSE.txt`);
     }
 
     await fs.rm(outputDir, { recursive: true, force: true });
     await fs.mkdir(outputDir, { recursive: true });
-    const ffmpegPath = path.join(outputDir, "ffmpeg.exe");
-    const ffprobePath = path.join(outputDir, "ffprobe.exe");
-    await fs.copyFile(ffmpegSource, ffmpegPath);
-    await fs.copyFile(ffprobeSource, ffprobePath);
+    const ffmpegPath = path.join(outputDir, process.platform === "win32" ? "ffmpeg.exe" : "ffmpeg");
+    const licensePath = path.join(outputDir, "FFmpeg-LICENSE.txt");
+    await fs.copyFile(portableFfmpegSource, ffmpegPath);
+    await fs.copyFile(licenseSource, licensePath);
+    if (process.platform !== "win32") {
+      await fs.chmod(ffmpegPath, 0o755);
+    }
 
     const manifest: PreparedAssetManifest = {
       version: asset.version,
+      archiveType: asset.archiveType,
       archiveUrl: asset.url,
       archiveSha256: asset.sha256,
       ffmpegSha256: await sha256File(ffmpegPath),
-      ffprobeSha256: await sha256File(ffprobePath)
+      licenseSha256: await sha256File(licensePath)
     };
     await fs.writeFile(
       path.join(outputDir, "asset-manifest.json"),

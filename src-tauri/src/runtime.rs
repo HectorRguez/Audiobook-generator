@@ -19,7 +19,6 @@ pub struct RuntimeManifest {
     pub python_exe: String,
     pub piper_server_entrypoint: String,
     pub ffmpeg_exe: String,
-    pub ffprobe_exe: String,
     pub voices: Vec<VoiceAsset>,
 }
 
@@ -53,7 +52,6 @@ pub struct RuntimeAssets {
     pub python_exe: PathBuf,
     pub piper_server_entrypoint: String,
     pub ffmpeg_exe: PathBuf,
-    pub ffprobe_exe: PathBuf,
     pub voices: Vec<ResolvedVoiceAsset>,
 }
 
@@ -198,7 +196,6 @@ pub fn load_manifest(root_dir: &Path, manifest_path: &Path) -> Result<RuntimeAss
         python_exe: root_dir.join(&manifest.python_exe),
         piper_server_entrypoint: manifest.piper_server_entrypoint.clone(),
         ffmpeg_exe: root_dir.join(&manifest.ffmpeg_exe),
-        ffprobe_exe: root_dir.join(&manifest.ffprobe_exe),
         voices: manifest
             .voices
             .iter()
@@ -225,7 +222,7 @@ pub fn load_manifest(root_dir: &Path, manifest_path: &Path) -> Result<RuntimeAss
 }
 
 fn validate_assets(assets: &RuntimeAssets) -> Result<()> {
-    let required = [&assets.python_exe, &assets.ffmpeg_exe, &assets.ffprobe_exe];
+    let required = [&assets.python_exe, &assets.ffmpeg_exe];
     for path in required {
         if !path.is_file() {
             return Err(anyhow!("Runtime asset missing: {}", path.display()));
@@ -281,7 +278,6 @@ mod tests {
             python_exe: PathBuf::new(),
             piper_server_entrypoint: "piper.http_server".to_string(),
             ffmpeg_exe: PathBuf::new(),
-            ffprobe_exe: PathBuf::new(),
             voices: vec![
                 voice("es_ES-sharvard-medium", "es_ES"),
                 voice("es_ES-davefx-medium", "es_ES"),

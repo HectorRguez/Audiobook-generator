@@ -1,5 +1,4 @@
 import fs from "node:fs/promises";
-import fsSync from "node:fs";
 import path from "node:path";
 import { spawn, type ChildProcessByStdio } from "node:child_process";
 import { once } from "node:events";
@@ -9,7 +8,7 @@ import type { Readable } from "node:stream";
 interface RuntimeManifest {
   pythonExe: string;
   piperServerEntrypoint: string;
-  ffprobeExe: string;
+  ffmpegExe: string;
   voices: Array<{
     id: string;
     locale: string;
@@ -78,22 +77,6 @@ function spawnServer(
   });
 }
 
-function toolEnv(command: string): NodeJS.ProcessEnv {
-  const env = { ...process.env };
-  const libDir = path.join(path.dirname(command), "lib");
-  if (!fsSync.existsSync(libDir)) {
-    return env;
-  }
-
-  const key = process.platform === "darwin"
-    ? "DYLD_LIBRARY_PATH"
-    : process.platform === "win32"
-      ? "PATH"
-      : "LD_LIBRARY_PATH";
-  env[key] = [libDir, env[key]].filter(Boolean).join(path.delimiter);
-  return env;
-}
-
 async function waitForReady(port: number, diagnostics: () => string): Promise<void> {
   const deadline = Date.now() + 30000;
   while (Date.now() < deadline) {
@@ -110,12 +93,43 @@ async function waitForReady(port: number, diagnostics: () => string): Promise<vo
   throw new Error(`Timed out waiting for Piper /voices.\n${diagnostics()}`);
 }
 
+function validateWav(bytes: Buffer, voiceId: string): void {
+  if (bytes.length < 44 || bytes.toString("ascii", 0, 4) !== "RIFF" || bytes.toString("ascii", 8, 12) !== "WAVE") {
+    throw new Error(`Piper returned an invalid WAV header for ${voiceId}`);
+  }
+  let offset = 12;
+  let sampleRate = 0;
+  let dataBytes = 0;
+  while (offset + 8 <= bytes.length) {
+    const chunkId = bytes.toString("ascii", offset, offset + 4);
+    const chunkSize = bytes.readUInt32LE(offset + 4);
+    const chunkStart = offset + 8;
+    if (chunkId === "fmt " && chunkSize >= 16 && chunkStart + chunkSize <= bytes.length) {
+      sampleRate = bytes.readUInt32LE(chunkStart + 4);
+    } else if (chunkId === "data") {
+      dataBytes = Math.min(chunkSize, bytes.length - chunkStart);
+    }
+    offset = chunkStart + chunkSize + (chunkSize % 2);
+  }
+  if (sampleRate <= 0 || dataBytes <= 0) {
+    throw new Error(`Piper returned an empty or malformed WAV for ${voiceId}`);
+  }
+}
+
+function toolEnv(command: string): NodeJS.ProcessEnv {
+  const env = { ...process.env };
+  const libDir = path.join(path.dirname(command), "lib");
+  const key = process.platform === "win32" ? "PATH" : "LD_LIBRARY_PATH";
+  env[key] = [libDir, env[key]].filter(Boolean).join(path.delimiter);
+  return env;
+}
+
 function run(command: string, args: string[]): Promise<void> {
   return new Promise((resolve, reject) => {
     const child = spawn(command, args, {
       env: toolEnv(command),
       stdio: "inherit",
-      shell: false
+      windowsHide: true
     });
     child.on("error", reject);
     child.on("close", (code) => {
@@ -126,6 +140,21 @@ function run(command: string, args: string[]): Promise<void> {
       }
     });
   });
+}
+
+async function smokeFinalEncoders(root: string, manifest: RuntimeManifest, wavPath: string): Promise<void> {
+  const ffmpeg = path.resolve(root, manifest.ffmpegExe);
+  const outputs = [
+    { path: path.join(".cache", "runtime-smoke", "ffmpeg-smoke.mp3"), args: ["-c:a", "libmp3lame", "-q:a", "2"] },
+    { path: path.join(".cache", "runtime-smoke", "ffmpeg-smoke.m4b"), args: ["-c:a", "aac", "-b:a", "128k"] }
+  ];
+  for (const output of outputs) {
+    await run(ffmpeg, ["-y", "-loglevel", "error", "-i", wavPath, ...output.args, output.path]);
+    if ((await fs.stat(output.path)).size < 1_000) {
+      throw new Error(`FFmpeg produced an unexpectedly small ${path.extname(output.path)} file`);
+    }
+  }
+  console.log("Runtime smoke test passed for bundled MP3 and M4B encoding.");
 }
 
 async function smokeVoice(
@@ -159,16 +188,12 @@ async function smokeVoice(
     const outDir = path.join(".cache", "runtime-smoke");
     await fs.mkdir(outDir, { recursive: true });
     const wavPath = path.join(outDir, `${voice.id}.wav`);
-    await fs.writeFile(wavPath, Buffer.from(await response.arrayBuffer()));
-    await run(path.resolve(root, manifest.ffprobeExe), [
-      "-v",
-      "error",
-      "-show_entries",
-      "format=duration",
-      "-of",
-      "json",
-      wavPath
-    ]);
+    const wavBytes = Buffer.from(await response.arrayBuffer());
+    validateWav(wavBytes, voice.id);
+    await fs.writeFile(wavPath, wavBytes);
+    if (/Traceback|Error processing line/.test(stderr)) {
+      throw new Error(`Embedded Python reported a startup error for ${voice.id}:\n${stderr}`);
+    }
     console.log(`Runtime smoke test passed for ${voice.id}: ${wavPath}`);
   } finally {
     server.kill();
@@ -192,8 +217,13 @@ async function main(): Promise<void> {
   const voices = process.argv.includes("--all-voices")
     ? manifest.voices
     : manifest.voices.slice(0, 1);
+  let firstWav: string | undefined;
   for (const voice of voices) {
     await smokeVoice(root, manifest, voice);
+    firstWav ||= path.join(".cache", "runtime-smoke", `${voice.id}.wav`);
+  }
+  if (firstWav) {
+    await smokeFinalEncoders(root, manifest, firstWav);
   }
 }
 

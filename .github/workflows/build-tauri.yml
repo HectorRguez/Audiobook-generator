@@ -19,11 +19,9 @@ jobs:
           - target: win32-x64
             os: windows-latest
             ffmpeg_bin: .cache/runtime-tools/win32-x64/ffmpeg.exe
-            ffprobe_bin: .cache/runtime-tools/win32-x64/ffprobe.exe
           - target: linux-x64
             os: ubuntu-latest
-            ffmpeg_bin: ""
-            ffprobe_bin: ""
+            ffmpeg_bin: .cache/runtime-tools/linux-x64/ffmpeg
 
     runs-on: ${{ matrix.os }}
     permissions:
@@ -52,21 +50,20 @@ jobs:
             libayatana-appindicator3-dev \
             librsvg2-dev \
             libfuse2 \
-            patchelf \
-            ffmpeg
+            patchelf
 
       - name: Install dependencies
         run: npm ci
 
-      - name: Restore pinned Windows FFmpeg
-        if: runner.os == 'Windows'
+      - name: Restore runtime build assets
         uses: actions/cache@v4
         with:
-          path: .cache/runtime-tools
-          key: runtime-tools-${{ matrix.target }}-${{ hashFiles('runtime/ffmpeg-assets.json') }}
+          path: |
+            .cache/runtime
+            .cache/runtime-tools
+          key: runtime-assets-${{ matrix.target }}-${{ hashFiles('runtime/ffmpeg-assets.json', 'runtime/voices.json', 'runtime/requirements/*') }}
 
-      - name: Prepare pinned Windows FFmpeg
-        if: runner.os == 'Windows'
+      - name: Prepare pinned FFmpeg
         run: npm run prepare:ffmpeg -- --target ${{ matrix.target }}
 
       - name: Set tagged release version
@@ -89,7 +86,6 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           FFMPEG_BIN: ${{ matrix.ffmpeg_bin }}
-          FFPROBE_BIN: ${{ matrix.ffprobe_bin }}
         run: npm run build:runtime -- --target ${{ matrix.target }}
 
       - name: Smoke test Piper runtime

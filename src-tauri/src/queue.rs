@@ -1,7 +1,9 @@
 use anyhow::{anyhow, Context, Result};
+use sha2::{Digest, Sha256};
 use std::{
     collections::HashSet,
     fs,
+    io::Read,
     path::{Path, PathBuf},
     sync::{
         atomic::{AtomicBool, Ordering},
@@ -15,11 +17,11 @@ use tokio::sync::Mutex as AsyncMutex;
 use crate::{
     audio,
     epub::extract_epub,
-    models::{AppSettings, JobDetail, QueueJob, QueueLogEvent, VoiceInfo},
-    narration::{build_chapter_plan, NarrationSegment},
+    models::{AppSettings, Chapter, JobDetail, QueueJob, QueueLogEvent, VoiceInfo},
+    narration::{build_chapter_plan, ChapterPlan, NarrationSegment, SENTENCE_SILENCE_MS},
     piper_http::PiperHttpEngine,
     repository::Repository,
-    runtime::{load_runtime_assets, RuntimeAssets},
+    runtime::{load_runtime_assets, ResolvedVoiceAsset, RuntimeAssets},
 };
 
 #[derive(Clone)]
@@ -159,20 +161,40 @@ impl QueueManager {
         let work_dir = app_data.join("work").join(&job.id);
         fs::create_dir_all(&work_dir)?;
 
-        self.log(&job.id, "info", "Extracting EPUB chapters.");
-        self.repo().update_job_status(&job.id, "extracting", None)?;
-        let extraction = extract_epub(Path::new(&job.source_path), &work_dir)?;
-        self.repo()
-            .replace_chapters(&job.id, &extraction.chapters)?;
-        self.repo().update_job_metadata(
-            &job.id,
-            &extraction.title,
-            extraction.author.as_deref(),
-            extraction.total_chars,
-        )?;
-        job.title = extraction.title;
-        job.author = extraction.author;
-        job.total_chars = extraction.total_chars;
+        let source_fingerprint = sha256_file(Path::new(&job.source_path))?;
+        let existing_chapters = self.repo().list_chapters(&job.id)?;
+        let can_reuse_extraction = job.source_fingerprint.as_deref()
+            == Some(source_fingerprint.as_str())
+            && job.narration_language.is_some()
+            && !existing_chapters.is_empty()
+            && existing_chapters
+                .iter()
+                .all(|chapter| Path::new(&chapter.text_path).is_file());
+
+        let narration_language = if can_reuse_extraction {
+            self.log(&job.id, "info", "Reusing verified EPUB extraction.");
+            job.narration_language.clone().unwrap()
+        } else {
+            self.log(&job.id, "info", "Extracting EPUB chapters.");
+            self.repo().update_job_status(&job.id, "extracting", None)?;
+            let extraction = extract_epub(Path::new(&job.source_path), &work_dir)?;
+            self.repo()
+                .replace_chapters(&job.id, &extraction.chapters)?;
+            self.repo().update_job_extraction(
+                &job.id,
+                &extraction.title,
+                extraction.author.as_deref(),
+                extraction.total_chars,
+                &source_fingerprint,
+                &extraction.language,
+            )?;
+            job.title = extraction.title;
+            job.author = extraction.author;
+            job.total_chars = extraction.total_chars;
+            job.source_fingerprint = Some(source_fingerprint);
+            job.narration_language = Some(extraction.language.clone());
+            extraction.language
+        };
 
         let preferred_voice_id = if runtime.voice(&job.voice_id).is_some() {
             job.voice_id.clone()
@@ -182,8 +204,8 @@ impl QueueManager {
                 .ok_or_else(|| anyhow!("Runtime has no Spanish voices."))?
         };
         let voice = runtime
-            .narration_voice(&preferred_voice_id, &extraction.language)
-            .ok_or_else(|| anyhow!("No bundled voice supports {}.", extraction.language))?;
+            .narration_voice(&preferred_voice_id, &narration_language)
+            .ok_or_else(|| anyhow!("No bundled voice supports {narration_language}."))?;
         self.repo().update_job_voice(&job.id, &voice.id)?;
         job.voice_id = voice.id.clone();
         self.log(
@@ -193,6 +215,7 @@ impl QueueManager {
         );
         self.emit_job(&job.id);
 
+        let synthesis_fingerprint = synthesis_fingerprint(&runtime, &voice)?;
         let chapters = self.repo().list_chapters(&job.id)?;
         let mut processed_chars = 0_i64;
         for chapter in chapters {
@@ -200,11 +223,10 @@ impl QueueManager {
             let chapter_wav = self
                 .process_chapter(
                     &job,
-                    &chapter.text_path,
-                    chapter.idx,
-                    &chapter.title,
+                    &chapter,
                     &runtime,
                     &voice,
+                    &synthesis_fingerprint,
                     &work_dir,
                     processed_chars,
                 )
@@ -228,30 +250,58 @@ impl QueueManager {
     async fn process_chapter(
         &self,
         job: &QueueJob,
-        text_path: &str,
-        chapter_idx: i64,
-        _chapter_title: &str,
+        chapter: &Chapter,
         runtime: &RuntimeAssets,
-        voice: &crate::runtime::ResolvedVoiceAsset,
+        voice: &ResolvedVoiceAsset,
+        synthesis_fingerprint: &str,
         work_dir: &Path,
         processed_before_chapter: i64,
     ) -> Result<ChapterProcessResult> {
-        let text = fs::read_to_string(text_path)?;
+        let text = fs::read_to_string(&chapter.text_path)?;
         let plan = build_chapter_plan(&text);
         if plan.speech_segment_count == 0 {
             return Ok(ChapterProcessResult { processed_chars: 0 });
         }
 
+        let chapter_idx = chapter.idx;
+        let plan_fingerprint = chapter_plan_fingerprint(&plan, synthesis_fingerprint);
+
         let chapter_dir = work_dir
             .join("audio")
             .join("chunks")
             .join(chapter_idx.to_string());
+        let chapter_wav_dir = work_dir.join("audio").join("chapters");
+        let chapter_wav = chapter_wav_dir.join(format!("chapter_{chapter_idx:05}.wav"));
+        let plan_matches = chapter.plan_fingerprint.as_deref() == Some(&plan_fingerprint);
+        if !plan_matches {
+            let _ = fs::remove_dir_all(&chapter_dir);
+            let _ = fs::remove_file(&chapter_wav);
+            self.repo().reset_chapter_plan(
+                &job.id,
+                chapter_idx,
+                &plan_fingerprint,
+                plan.speech_segment_count as i64,
+            )?;
+        } else if chapter.status == "encoded"
+            && audio::wav_is_valid(&chapter_wav, voice.sample_rate)
+        {
+            self.log(
+                &job.id,
+                "info",
+                &format!("Reusing completed chapter {}.", chapter_idx + 1),
+            );
+            return Ok(ChapterProcessResult {
+                processed_chars: plan.total_speech_chars as i64,
+            });
+        }
+
         fs::create_dir_all(&chapter_dir)?;
         let silence_dir = work_dir.join("audio").join("silence");
         let mut wavs = Vec::new();
         let mut processed = 0_i64;
         let mut sample_rate = voice.sample_rate;
         let started = Instant::now();
+        let mut reused_segments = 0_usize;
 
         for segment in &plan.segments {
             self.check_control(&job.id)?;
@@ -260,20 +310,18 @@ impl QueueManager {
                     speech_index, text, ..
                 } => {
                     let chunk_path = chapter_dir.join(format!("chunk_{speech_index:05}.wav"));
-                    let mut piper = self.piper.lock().await;
-                    piper.ensure_started(runtime, voice).await?;
-                    piper.synthesize_to_file(text, &chunk_path).await?;
-                    drop(piper);
-
-                    if sample_rate.is_none() {
-                        sample_rate = Some(
-                            audio::sample_rate(&runtime.ffprobe_exe, &chunk_path)
-                                .await
-                                .context("Failed to determine Piper WAV sample rate")?,
-                        );
+                    if plan_matches && audio::wav_is_valid(&chunk_path, voice.sample_rate) {
+                        reused_segments += 1;
+                    } else {
+                        self.synthesize_with_retry(job, runtime, voice, text, &chunk_path)
+                            .await?;
                     }
 
-                    processed += text.len() as i64;
+                    if sample_rate.is_none() {
+                        sample_rate = audio::wav_sample_rate(&chunk_path);
+                    }
+
+                    processed += text.chars().count() as i64;
                     let total_processed = processed_before_chapter + processed;
                     let elapsed_seconds = started.elapsed().as_secs_f64().max(0.001);
                     let chars_per_second = processed as f64 / elapsed_seconds;
@@ -313,30 +361,25 @@ impl QueueManager {
                     })?;
                     let silence_path =
                         silence_dir.join(format!("silence_{rate}_{duration_ms}ms.wav"));
-                    audio::ensure_silence_wav(
-                        &runtime.ffmpeg_exe,
-                        &silence_path,
-                        rate,
-                        *duration_ms,
-                    )
-                    .await?;
+                    audio::ensure_silence_wav(&silence_path, rate, *duration_ms).await?;
                     wavs.push(silence_path);
                 }
             }
         }
 
-        let chapter_wav_dir = work_dir.join("audio").join("chapters");
-        let chapter_wav = chapter_wav_dir.join(format!("chapter_{chapter_idx:05}.wav"));
-        audio::concat_wavs(
-            &runtime.ffmpeg_exe,
-            &wavs,
-            &chapter_wav,
-            &work_dir.join("tmp"),
-        )
-        .await?;
-        let duration = audio::duration_ms(&runtime.ffprobe_exe, &chapter_wav)
-            .await
-            .unwrap_or(0);
+        if reused_segments > 0 {
+            self.log(
+                &job.id,
+                "info",
+                &format!(
+                    "Chapter {} reused {reused_segments}/{} verified speech segments.",
+                    chapter_idx + 1,
+                    plan.speech_segment_count
+                ),
+            );
+        }
+        audio::concat_wavs(&wavs, &chapter_wav).await?;
+        let duration = audio::duration_ms(&chapter_wav).unwrap_or(0);
         self.repo().finish_chapter(
             &job.id,
             chapter_idx,
@@ -348,6 +391,44 @@ impl QueueManager {
         Ok(ChapterProcessResult {
             processed_chars: processed,
         })
+    }
+
+    async fn synthesize_with_retry(
+        &self,
+        job: &QueueJob,
+        runtime: &RuntimeAssets,
+        voice: &ResolvedVoiceAsset,
+        text: &str,
+        output: &Path,
+    ) -> Result<()> {
+        let mut last_error = None;
+        for attempt in 1..=2 {
+            let result = async {
+                let bytes = {
+                    let mut piper = self.piper.lock().await;
+                    piper.ensure_started(runtime, voice).await?;
+                    piper.synthesize(text).await?
+                };
+                audio::write_wav_atomically(output, &bytes, voice.sample_rate)
+            }
+            .await;
+
+            match result {
+                Ok(()) => return Ok(()),
+                Err(error) => {
+                    last_error = Some(error);
+                    self.piper.lock().await.stop().await;
+                    if attempt == 1 {
+                        self.log(
+                            &job.id,
+                            "warn",
+                            "Piper synthesis failed; restarting the local server and retrying once.",
+                        );
+                    }
+                }
+            }
+        }
+        Err(last_error.unwrap_or_else(|| anyhow!("Piper synthesis failed.")))
     }
 
     async fn finalize_job(
@@ -369,13 +450,8 @@ impl QueueManager {
             return Err(anyhow!("No chapter audio generated."));
         }
         let merged_wav = work_dir.join("audio").join("merged.wav");
-        audio::concat_wavs(
-            &runtime.ffmpeg_exe,
-            &chapter_wavs,
-            &merged_wav,
-            &work_dir.join("tmp"),
-        )
-        .await?;
+        audio::concat_wavs(&chapter_wavs, &merged_wav).await?;
+        let duration = audio::duration_ms(&merged_wav).unwrap_or(0);
         let (destination_dir, final_path) = audio::output_paths(
             Path::new(&job.output_dir),
             &job.title,
@@ -392,9 +468,6 @@ impl QueueManager {
             job.author.as_deref(),
         )
         .await?;
-        let duration = audio::duration_ms(&runtime.ffprobe_exe, &final_path)
-            .await
-            .unwrap_or(0);
         let size = fs::metadata(&final_path)
             .map(|meta| meta.len() as i64)
             .unwrap_or(0);
@@ -480,9 +553,83 @@ struct ChapterProcessResult {
     processed_chars: i64,
 }
 
+fn sha256_file(path: &Path) -> Result<String> {
+    let mut file = fs::File::open(path)
+        .with_context(|| format!("Failed to open {} for fingerprinting", path.display()))?;
+    let mut hash = Sha256::new();
+    let mut buffer = [0_u8; 64 * 1024];
+    loop {
+        let count = file.read(&mut buffer)?;
+        if count == 0 {
+            break;
+        }
+        hash.update(&buffer[..count]);
+    }
+    Ok(format!("{:x}", hash.finalize()))
+}
+
+fn synthesis_fingerprint(runtime: &RuntimeAssets, voice: &ResolvedVoiceAsset) -> Result<String> {
+    let mut hash = Sha256::new();
+    hash.update(b"audiobook-generator-synthesis-v1\0");
+    hash.update(runtime.piper_version.as_bytes());
+    hash.update(b"\0");
+    hash.update(voice.id.as_bytes());
+    hash.update(b"\0");
+    hash.update(SENTENCE_SILENCE_MS.to_le_bytes());
+    hash.update(fs::read(&voice.model_path)?);
+    hash.update(fs::read(&voice.config_path)?);
+    Ok(format!("{:x}", hash.finalize()))
+}
+
+fn chapter_plan_fingerprint(plan: &ChapterPlan, synthesis_fingerprint: &str) -> String {
+    let mut hash = Sha256::new();
+    hash.update(b"audiobook-generator-narration-plan-v1\0");
+    hash.update(synthesis_fingerprint.as_bytes());
+    for segment in &plan.segments {
+        match segment {
+            NarrationSegment::Speech {
+                speech_index,
+                text,
+                paragraph_index,
+            } => {
+                hash.update(b"speech\0");
+                hash.update(speech_index.to_le_bytes());
+                hash.update(paragraph_index.to_le_bytes());
+                hash.update(text.len().to_le_bytes());
+                hash.update(text.as_bytes());
+            }
+            NarrationSegment::Silence {
+                duration_ms,
+                reason,
+            } => {
+                hash.update(b"silence\0");
+                hash.update(duration_ms.to_le_bytes());
+                hash.update(format!("{reason:?}").as_bytes());
+            }
+        }
+    }
+    format!("{:x}", hash.finalize())
+}
+
 fn now_ts() -> i64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap_or_default()
         .as_millis() as i64
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn plan_fingerprint_is_stable_and_covers_text_and_synthesis_identity() {
+        let first = build_chapter_plan("First paragraph.\n\nSecond paragraph.");
+        let changed = build_chapter_plan("First paragraph.\n\nChanged paragraph.");
+
+        let fingerprint = chapter_plan_fingerprint(&first, "voice-a");
+        assert_eq!(fingerprint, chapter_plan_fingerprint(&first, "voice-a"));
+        assert_ne!(fingerprint, chapter_plan_fingerprint(&changed, "voice-a"));
+        assert_ne!(fingerprint, chapter_plan_fingerprint(&first, "voice-b"));
+    }
 }

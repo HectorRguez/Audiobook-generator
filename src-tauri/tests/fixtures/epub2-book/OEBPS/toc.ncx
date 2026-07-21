@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ncx xmlns="http://www.daisy.org/z3986/2005/ncx/" version="2005-1">
+  <head><meta name="dtb:uid" content="urn:uuid:spanish-fixture"/></head>
+  <docTitle><text>Spanish Fixture</text></docTitle>
+  <navMap>
+    <navPoint id="chapter" playOrder="1">
+      <navLabel><text>Capitulo de prueba</text></navLabel>
+      <content src="chapter.xhtml#inicio"/>
+    </navPoint>
+  </navMap>
+</ncx>

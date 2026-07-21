@@ -35,6 +35,8 @@ CREATE TABLE IF NOT EXISTS jobs (
   total_chars INTEGER NOT NULL DEFAULT 0,
   processed_chars INTEGER NOT NULL DEFAULT 0,
   settings_json TEXT NOT NULL DEFAULT '{}',
+  source_fingerprint TEXT,
+  narration_language TEXT,
   created_at INTEGER NOT NULL,
   updated_at INTEGER NOT NULL,
   started_at INTEGER,
@@ -55,6 +57,7 @@ CREATE TABLE IF NOT EXISTS chapters (
   duration_ms INTEGER,
   audio_path TEXT,
   error_message TEXT,
+  plan_fingerprint TEXT,
   created_at INTEGER NOT NULL,
   updated_at INTEGER NOT NULL,
   FOREIGN KEY(job_id) REFERENCES jobs(id) ON DELETE CASCADE,
@@ -99,6 +102,20 @@ fn now_ts() -> i64 {
         .as_millis() as i64
 }
 
+fn ensure_column(conn: &Connection, table: &str, column: &str, definition: &str) -> Result<()> {
+    let mut statement = conn.prepare(&format!("PRAGMA table_info({table})"))?;
+    let names = statement
+        .query_map([], |row| row.get::<_, String>(1))?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    if !names.iter().any(|name| name == column) {
+        conn.execute(
+            &format!("ALTER TABLE {table} ADD COLUMN {column} {definition}"),
+            [],
+        )?;
+    }
+    Ok(())
+}
+
 fn row_to_job(row: &Row<'_>) -> rusqlite::Result<QueueJob> {
     Ok(QueueJob {
         id: row.get("id")?,
@@ -118,6 +135,8 @@ fn row_to_job(row: &Row<'_>) -> rusqlite::Result<QueueJob> {
         total_chars: row.get("total_chars")?,
         processed_chars: row.get("processed_chars")?,
         settings_json: row.get("settings_json")?,
+        source_fingerprint: row.get("source_fingerprint")?,
+        narration_language: row.get("narration_language")?,
         created_at: row.get("created_at")?,
         updated_at: row.get("updated_at")?,
         started_at: row.get("started_at")?,
@@ -138,6 +157,7 @@ fn row_to_chapter(row: &Row<'_>) -> rusqlite::Result<Chapter> {
         duration_ms: row.get("duration_ms")?,
         audio_path: row.get("audio_path")?,
         error_message: row.get("error_message")?,
+        plan_fingerprint: row.get("plan_fingerprint")?,
         created_at: row.get("created_at")?,
         updated_at: row.get("updated_at")?,
     })
@@ -173,6 +193,9 @@ impl Repository {
         };
         repo.with_conn(|conn| {
             conn.execute_batch(SCHEMA)?;
+            ensure_column(conn, "jobs", "source_fingerprint", "TEXT")?;
+            ensure_column(conn, "jobs", "narration_language", "TEXT")?;
+            ensure_column(conn, "chapters", "plan_fingerprint", "TEXT")?;
             Ok(())
         })?;
         repo.ensure_defaults()?;
@@ -349,6 +372,8 @@ impl Repository {
           total_chars: 0,
           processed_chars: 0,
           settings_json: "{}".to_string(),
+          source_fingerprint: None,
+          narration_language: None,
           created_at: ts,
           updated_at: ts,
           started_at: None,
@@ -467,18 +492,30 @@ impl Repository {
         })
     }
 
-    pub fn update_job_metadata(
+    pub fn update_job_extraction(
         &self,
         job_id: &str,
         title: &str,
         author: Option<&str>,
         total_chars: i64,
+        source_fingerprint: &str,
+        narration_language: &str,
     ) -> Result<()> {
         self.with_conn(|conn| {
             conn.execute(
-        "UPDATE jobs SET title = ?1, author = ?2, total_chars = ?3, updated_at = ?4 WHERE id = ?5",
-        params![title, author, total_chars, now_ts(), job_id],
-      )?;
+                "UPDATE jobs SET title = ?1, author = ?2, total_chars = ?3,
+                 source_fingerprint = ?4, narration_language = ?5, updated_at = ?6
+                 WHERE id = ?7",
+                params![
+                    title,
+                    author,
+                    total_chars,
+                    source_fingerprint,
+                    narration_language,
+                    now_ts(),
+                    job_id
+                ],
+            )?;
             Ok(())
         })
     }
@@ -574,6 +611,24 @@ impl Repository {
     })
     }
 
+    pub fn reset_chapter_plan(
+        &self,
+        job_id: &str,
+        idx: i64,
+        fingerprint: &str,
+        total: i64,
+    ) -> Result<()> {
+        self.with_conn(|conn| {
+            conn.execute(
+                "UPDATE chapters SET status = 'queued', chunk_cursor = 0, total_chunks = ?1,
+                 duration_ms = NULL, audio_path = NULL, error_message = NULL,
+                 plan_fingerprint = ?2, updated_at = ?3 WHERE job_id = ?4 AND idx = ?5",
+                params![total, fingerprint, now_ts(), job_id, idx],
+            )?;
+            Ok(())
+        })
+    }
+
     pub fn finish_chapter(
         &self,
         job_id: &str,
@@ -599,6 +654,7 @@ impl Repository {
         size_bytes: i64,
     ) -> Result<()> {
         self.with_conn(|conn| {
+      conn.execute("DELETE FROM outputs WHERE job_id = ?1", params![job.id])?;
       conn.execute(
         "INSERT INTO outputs (id, job_id, title, file_path, format, duration_ms, size_bytes, created_at)
          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
@@ -737,5 +793,39 @@ mod tests {
                 Some(DEFAULT_VOICE_ID)
             );
         }
+    }
+
+    #[test]
+    fn preserves_resume_cursor_and_plan_across_restart() {
+        let tmp = tempfile::tempdir().unwrap();
+        let db_path = tmp.path().join("db.sqlite");
+        let output_path = tmp.path().join("outputs");
+        let text_path = tmp.path().join("chapter.txt");
+        fs::write(&text_path, "Chapter text long enough for a narration plan.").unwrap();
+
+        let repo = Repository::new(db_path.clone(), output_path.clone()).unwrap();
+        let job = repo
+            .enqueue_epub_files(&[tmp.path().join("book.epub").to_string_lossy().to_string()])
+            .unwrap()
+            .remove(0);
+        repo.replace_chapters(
+            &job.id,
+            &[ChapterExtraction {
+                index: 0,
+                title: "Chapter 1".to_string(),
+                text_path: text_path.to_string_lossy().to_string(),
+            }],
+        )
+        .unwrap();
+        repo.reset_chapter_plan(&job.id, 0, "plan-v1", 4).unwrap();
+        repo.update_chapter_processing(&job.id, 0, 2, 4).unwrap();
+        drop(repo);
+
+        let reopened = Repository::new(db_path, output_path).unwrap();
+        let chapter = reopened.list_chapters(&job.id).unwrap().remove(0);
+        assert_eq!(chapter.status, "queued");
+        assert_eq!(chapter.chunk_cursor, 2);
+        assert_eq!(chapter.total_chunks, 4);
+        assert_eq!(chapter.plan_fingerprint.as_deref(), Some("plan-v1"));
     }
 }

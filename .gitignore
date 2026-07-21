@@ -5,10 +5,12 @@ dist
 dist-electron
 dist-scripts
 dist-site
+/dist-upload/
 renderer/out
 src-tauri/gen
 src-tauri/target
 !runtime/dist/
+runtime/dist/*
 !runtime/dist/.gitkeep
 *.log
 .DS_Store

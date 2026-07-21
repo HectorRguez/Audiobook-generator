@@ -13,9 +13,10 @@ anyhow = "1"
 base64 = "0.22"
 dirs = "6"
 html2text = "0.17.1"
-quick-xml = "0.38"
+hound = "3.5"
 regex = "1"
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+rbook = { version = "0.7.10", default-features = false, features = ["threadsafe"] }
 rusqlite = { version = "0.37", features = ["bundled"] }
 sanitize-filename = "0.6"
 serde = { version = "1", features = ["derive"] }
@@ -30,10 +31,10 @@ thiserror = "2"
 tokio = { version = "1", features = ["macros", "process", "rt-multi-thread", "sync", "time"] }
 uuid = { version = "1", features = ["v4", "serde"] }
 whatlang = "0.18"
-zip = "2"
 
 [target.'cfg(not(target_os = "linux"))'.dependencies]
 tauri-plugin-updater = "2.10.1"
 
 [dev-dependencies]
 httpmock = "0.8"
+zip = { version = "8.6", default-features = false, features = ["deflate"] }

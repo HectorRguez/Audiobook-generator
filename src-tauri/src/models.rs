@@ -21,6 +21,8 @@ pub struct QueueJob {
     pub total_chars: i64,
     pub processed_chars: i64,
     pub settings_json: String,
+    pub source_fingerprint: Option<String>,
+    pub narration_language: Option<String>,
     pub created_at: i64,
     pub updated_at: i64,
     pub started_at: Option<i64>,
@@ -40,6 +42,7 @@ pub struct Chapter {
     pub duration_ms: Option<i64>,
     pub audio_path: Option<String>,
     pub error_message: Option<String>,
+    pub plan_fingerprint: Option<String>,
     pub created_at: i64,
     pub updated_at: i64,
 }

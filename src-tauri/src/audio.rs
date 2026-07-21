@@ -1,12 +1,71 @@
 use anyhow::{anyhow, Context, Result};
 use sanitize_filename::sanitize;
-use serde_json::Value;
 use std::{
     env, fs,
     path::{Path, PathBuf},
     process::Stdio,
 };
 use tokio::process::Command;
+
+pub fn wav_is_valid(path: &Path, expected_sample_rate: Option<u32>) -> bool {
+    let Ok(mut reader) = hound::WavReader::open(path) else {
+        return false;
+    };
+    let spec = reader.spec();
+    let expected_samples = u64::from(reader.duration()) * u64::from(spec.channels);
+    if expected_samples == 0
+        || spec.channels == 0
+        || spec.sample_rate == 0
+        || spec.bits_per_sample != 16
+        || spec.sample_format != hound::SampleFormat::Int
+        || expected_sample_rate.is_some_and(|rate| spec.sample_rate != rate)
+    {
+        return false;
+    }
+    let mut actual_samples = 0_u64;
+    for sample in reader.samples::<i16>() {
+        if sample.is_err() {
+            return false;
+        }
+        actual_samples += 1;
+    }
+    actual_samples == expected_samples
+}
+
+pub fn wav_sample_rate(path: &Path) -> Option<u32> {
+    hound::WavReader::open(path)
+        .ok()
+        .map(|reader| reader.spec().sample_rate)
+}
+
+pub fn write_wav_atomically(
+    output: &Path,
+    bytes: &[u8],
+    expected_sample_rate: Option<u32>,
+) -> Result<()> {
+    let parent = output
+        .parent()
+        .ok_or_else(|| anyhow!("WAV output has no parent: {}", output.display()))?;
+    fs::create_dir_all(parent)?;
+    let temp_path = parent.join(format!(
+        ".{}.{}.part",
+        output
+            .file_name()
+            .and_then(|name| name.to_str())
+            .unwrap_or("audio.wav"),
+        uuid::Uuid::new_v4()
+    ));
+    fs::write(&temp_path, bytes)?;
+    if !wav_is_valid(&temp_path, expected_sample_rate) {
+        let _ = fs::remove_file(&temp_path);
+        return Err(anyhow!("Piper returned an invalid WAV file."));
+    }
+    if output.exists() {
+        fs::remove_file(output)?;
+    }
+    fs::rename(&temp_path, output)?;
+    Ok(())
+}
 
 pub fn output_paths(
     output_dir: &Path,
@@ -47,10 +106,6 @@ pub fn output_paths(
     (destination_dir, final_path)
 }
 
-fn quote_for_concat(path: &Path) -> String {
-    format!("file '{}'", path.to_string_lossy().replace('\'', "'\\''"))
-}
-
 fn prepend_path_env(command: &mut Command, key: &str, value: &Path) {
     let mut paths = vec![value.to_path_buf()];
     if let Some(existing) = env::var_os(key) {
@@ -79,72 +134,90 @@ fn runtime_tool_command(exe: &Path) -> Command {
     command
 }
 
-pub async fn concat_wavs(
-    ffmpeg: &Path,
-    inputs: &[PathBuf],
-    output: &Path,
-    temp_dir: &Path,
-) -> Result<()> {
+pub async fn concat_wavs(inputs: &[PathBuf], output: &Path) -> Result<()> {
     if inputs.is_empty() {
         return Err(anyhow!("concat_wavs requires at least one input."));
     }
-    fs::create_dir_all(temp_dir)?;
-    if let Some(parent) = output.parent() {
-        fs::create_dir_all(parent)?;
+    let parent = output
+        .parent()
+        .ok_or_else(|| anyhow!("WAV output has no parent: {}", output.display()))?;
+    fs::create_dir_all(parent)?;
+    let temp_output = parent.join(format!(".concat-{}.part.wav", uuid::Uuid::new_v4()));
+
+    let first_reader = hound::WavReader::open(&inputs[0])?;
+    let expected_spec = first_reader.spec();
+    drop(first_reader);
+    if expected_spec.sample_format != hound::SampleFormat::Int
+        || expected_spec.bits_per_sample != 16
+    {
+        return Err(anyhow!(
+            "Only 16-bit PCM narration WAVs can be concatenated."
+        ));
     }
-    let list_path = temp_dir.join(format!("concat-{}.txt", uuid::Uuid::new_v4()));
-    let list = inputs
-        .iter()
-        .map(|path| quote_for_concat(path))
-        .collect::<Vec<_>>()
-        .join("\n");
-    fs::write(&list_path, list)?;
-    let mut command = runtime_tool_command(ffmpeg);
-    let status = command
-        .args(["-y", "-f", "concat", "-safe", "0", "-i"])
-        .arg(&list_path)
-        .args(["-c", "copy"])
-        .arg(output)
-        .stdin(Stdio::null())
-        .status()
-        .await
-        .context("Failed to run ffmpeg concat")?;
-    let _ = fs::remove_file(&list_path);
-    if !status.success() {
-        return Err(anyhow!("ffmpeg concat failed with {status}"));
+
+    let mut writer = hound::WavWriter::create(&temp_output, expected_spec)?;
+    for input in inputs {
+        let mut reader = hound::WavReader::open(input)
+            .with_context(|| format!("Failed to read narration WAV {}", input.display()))?;
+        if reader.spec() != expected_spec {
+            let _ = fs::remove_file(&temp_output);
+            return Err(anyhow!(
+                "Narration WAV format mismatch in {}",
+                input.display()
+            ));
+        }
+        for sample in reader.samples::<i16>() {
+            writer.write_sample(sample?)?;
+        }
     }
+    writer.finalize()?;
+    if !wav_is_valid(&temp_output, Some(expected_spec.sample_rate)) {
+        let _ = fs::remove_file(&temp_output);
+        return Err(anyhow!("WAV concatenation produced an invalid file."));
+    }
+    if output.exists() {
+        fs::remove_file(output)?;
+    }
+    fs::rename(temp_output, output)?;
     Ok(())
 }
 
-pub async fn ensure_silence_wav(
-    ffmpeg: &Path,
-    output: &Path,
-    sample_rate: u32,
-    duration_ms: u64,
-) -> Result<()> {
-    if output.is_file() {
+pub async fn ensure_silence_wav(output: &Path, sample_rate: u32, duration_ms: u64) -> Result<()> {
+    if wav_is_valid(output, Some(sample_rate)) {
         return Ok(());
     }
     if let Some(parent) = output.parent() {
         fs::create_dir_all(parent)?;
     }
 
-    let duration_seconds = format!("{:.3}", duration_ms as f64 / 1000.0);
-    let mut command = runtime_tool_command(ffmpeg);
-    let status = command
-        .args(["-y", "-loglevel", "error", "-f", "lavfi", "-i"])
-        .arg(format!("anullsrc=r={sample_rate}:cl=mono"))
-        .arg("-t")
-        .arg(duration_seconds)
-        .args(["-c:a", "pcm_s16le"])
-        .arg(output)
-        .stdin(Stdio::null())
-        .status()
-        .await
-        .context("Failed to generate silence WAV")?;
-    if !status.success() {
-        return Err(anyhow!("ffmpeg silence generation failed with {status}"));
+    let temp_output = output.with_file_name(format!(
+        ".{}.{}.part.wav",
+        output
+            .file_name()
+            .and_then(|name| name.to_str())
+            .unwrap_or("silence.wav"),
+        uuid::Uuid::new_v4()
+    ));
+    let spec = hound::WavSpec {
+        channels: 1,
+        sample_rate,
+        bits_per_sample: 16,
+        sample_format: hound::SampleFormat::Int,
+    };
+    let mut writer = hound::WavWriter::create(&temp_output, spec)?;
+    let sample_count = (u64::from(sample_rate) * duration_ms / 1_000) as usize;
+    for _ in 0..sample_count {
+        writer.write_sample(0_i16)?;
     }
+    writer.finalize()?;
+    if !wav_is_valid(&temp_output, Some(sample_rate)) {
+        let _ = fs::remove_file(&temp_output);
+        return Err(anyhow!("ffmpeg generated an invalid silence WAV."));
+    }
+    if output.exists() {
+        fs::remove_file(output)?;
+    }
+    fs::rename(temp_output, output)?;
     Ok(())
 }
 
@@ -182,63 +255,63 @@ pub async fn encode_final_audio(
     Ok(())
 }
 
-pub async fn duration_ms(ffprobe: &Path, input: &Path) -> Result<i64> {
-    let mut command = runtime_tool_command(ffprobe);
-    let output = command
-        .args([
-            "-v",
-            "error",
-            "-show_entries",
-            "format=duration",
-            "-of",
-            "json",
-        ])
-        .arg(input)
-        .stdin(Stdio::null())
-        .output()
-        .await
-        .context("Failed to run ffprobe")?;
-    if !output.status.success() {
+pub fn duration_ms(input: &Path) -> Result<i64> {
+    let reader = hound::WavReader::open(input)?;
+    let sample_rate = u64::from(reader.spec().sample_rate);
+    if sample_rate == 0 {
         return Ok(0);
     }
-    let parsed: Value = serde_json::from_slice(&output.stdout).unwrap_or(Value::Null);
-    let seconds = parsed
-        .get("format")
-        .and_then(|format| format.get("duration"))
-        .and_then(|duration| duration.as_str())
-        .and_then(|duration| duration.parse::<f64>().ok())
-        .unwrap_or(0.0);
-    Ok((seconds * 1000.0).round() as i64)
+    Ok(((u64::from(reader.duration()) * 1_000 + sample_rate / 2) / sample_rate) as i64)
 }
 
-pub async fn sample_rate(ffprobe: &Path, input: &Path) -> Result<u32> {
-    let mut command = runtime_tool_command(ffprobe);
-    let output = command
-        .args([
-            "-v",
-            "error",
-            "-select_streams",
-            "a:0",
-            "-show_entries",
-            "stream=sample_rate",
-            "-of",
-            "json",
-        ])
-        .arg(input)
-        .stdin(Stdio::null())
-        .output()
-        .await
-        .context("Failed to inspect WAV sample rate")?;
-    if !output.status.success() {
-        return Err(anyhow!("ffprobe sample-rate inspection failed"));
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn test_wav_bytes(sample_rate: u32) -> Vec<u8> {
+        let mut cursor = std::io::Cursor::new(Vec::new());
+        {
+            let spec = hound::WavSpec {
+                channels: 1,
+                sample_rate,
+                bits_per_sample: 16,
+                sample_format: hound::SampleFormat::Int,
+            };
+            let mut writer = hound::WavWriter::new(&mut cursor, spec).unwrap();
+            writer.write_sample(0_i16).unwrap();
+            writer.finalize().unwrap();
+        }
+        cursor.into_inner()
     }
-    let parsed: Value = serde_json::from_slice(&output.stdout)?;
-    parsed
-        .get("streams")
-        .and_then(Value::as_array)
-        .and_then(|streams| streams.first())
-        .and_then(|stream| stream.get("sample_rate"))
-        .and_then(Value::as_str)
-        .and_then(|rate| rate.parse::<u32>().ok())
-        .ok_or_else(|| anyhow!("WAV has no readable sample rate"))
+
+    #[test]
+    fn atomically_writes_only_valid_wavs() {
+        let temp = tempfile::tempdir().unwrap();
+        let output = temp.path().join("chunk.wav");
+
+        write_wav_atomically(&output, &test_wav_bytes(22_050), Some(22_050)).unwrap();
+        assert!(wav_is_valid(&output, Some(22_050)));
+        assert!(write_wav_atomically(&output, b"not wav", Some(22_050)).is_err());
+        assert!(wav_is_valid(&output, Some(22_050)));
+
+        let mut truncated = test_wav_bytes(22_050);
+        truncated.pop();
+        assert!(write_wav_atomically(&output, &truncated, Some(22_050)).is_err());
+        assert!(wav_is_valid(&output, Some(22_050)));
+    }
+
+    #[tokio::test]
+    async fn creates_and_concatenates_silence_without_ffmpeg() {
+        let temp = tempfile::tempdir().unwrap();
+        let first = temp.path().join("first.wav");
+        let second = temp.path().join("second.wav");
+        let combined = temp.path().join("combined.wav");
+
+        ensure_silence_wav(&first, 22_050, 250).await.unwrap();
+        ensure_silence_wav(&second, 22_050, 650).await.unwrap();
+        concat_wavs(&[first, second], &combined).await.unwrap();
+
+        assert!(wav_is_valid(&combined, Some(22_050)));
+        assert_eq!(duration_ms(&combined).unwrap(), 900);
+    }
 }

@@ -36,6 +36,8 @@ const TARGET_TRIPLES: Record<string, string> = {
 };
 
 const PIPER_VERSION = "1.4.2";
+const PYTHON_VERSION = "3.10.20";
+const PYTHON_ABI_VERSION = "3.10";
 const PIPER_SOURCE_URL = `https://github.com/OHF-Voice/piper1-gpl/archive/refs/tags/v${PIPER_VERSION}.tar.gz`;
 const VOICE_STRING_FIELDS: Array<keyof VoiceDefinition> = [
   "id",
@@ -144,12 +146,37 @@ async function download(url: string, target: string): Promise<void> {
     return;
   }
   await fs.mkdir(path.dirname(target), { recursive: true });
-  const response = await fetch(url);
-  if (!response.ok || !response.body) {
-    throw new Error(`Failed to download ${url}: ${response.status}`);
+  const partialPath = `${target}.partial`;
+  const failures: string[] = [];
+  for (let attempt = 1; attempt <= 4; attempt += 1) {
+    await fs.rm(partialPath, { force: true });
+    try {
+      const response = await fetch(url, {
+        redirect: "follow",
+        signal: AbortSignal.timeout(300_000),
+        headers: { "User-Agent": "audiobook-generator-runtime-builder" }
+      });
+      if (!response.ok || !response.body) {
+        throw new Error(`HTTP ${response.status}`);
+      }
+      const buffer = Buffer.from(await response.arrayBuffer());
+      await fs.writeFile(partialPath, buffer);
+      await fs.rename(partialPath, target);
+      return;
+    } catch (error) {
+      failures.push(error instanceof Error ? error.message : String(error));
+      if (attempt < 4) {
+        await new Promise((resolve) => setTimeout(resolve, 2 ** attempt * 1_000));
+      }
+    }
   }
-  const buffer = Buffer.from(await response.arrayBuffer());
-  await fs.writeFile(target, buffer);
+  throw new Error(`Failed to download ${url}: ${failures.join("; ")}`);
+}
+
+async function copyCachedDownload(url: string, cachePath: string, target: string): Promise<void> {
+  await download(url, cachePath);
+  await fs.mkdir(path.dirname(target), { recursive: true });
+  await fs.copyFile(cachePath, target);
 }
 
 async function selectPythonAsset(target: string): Promise<PythonAssetSelection> {
@@ -157,7 +184,7 @@ async function selectPythonAsset(target: string): Promise<PythonAssetSelection> 
   if (!triple) {
     throw new Error(`Unsupported runtime target: ${target}`);
   }
-  const releaseRef = process.env.PYTHON_BUILD_STANDALONE_RELEASE || "latest";
+  const releaseRef = process.env.PYTHON_BUILD_STANDALONE_RELEASE || "20260718";
   const url = releaseRef === "latest"
     ? "https://api.github.com/repos/astral-sh/python-build-standalone/releases/latest"
     : `https://api.github.com/repos/astral-sh/python-build-standalone/releases/tags/${releaseRef}`;
@@ -177,7 +204,8 @@ async function selectPythonAsset(target: string): Promise<PythonAssetSelection> 
     assets: Array<{ name: string; browser_download_url: string }>;
   };
   const asset = release.assets.find((candidate) => {
-    return candidate.name.includes(triple)
+    return candidate.name.startsWith(`cpython-${PYTHON_VERSION}+`)
+      && candidate.name.includes(triple)
       && candidate.name.includes("install_only")
       && candidate.name.endsWith(".tar.gz");
   });
@@ -194,7 +222,12 @@ async function selectPythonAsset(target: string): Promise<PythonAssetSelection> 
 async function findPythonExe(root: string, target: string): Promise<string> {
   const candidates = target.startsWith("win32")
     ? ["python/python.exe", "python/install/python.exe", "python/install/bin/python.exe"]
-    : ["python/bin/python3", "python/install/bin/python3", "python/bin/python"];
+    : [
+      "python/bin/python3",
+      `python/bin/python${PYTHON_ABI_VERSION}`,
+      "python/install/bin/python3",
+      "python/bin/python"
+    ];
   for (const candidate of candidates) {
     const full = path.join(root, candidate);
     if (fsSync.existsSync(full)) {
@@ -300,15 +333,32 @@ async function installPiper(pythonExe: string, target: string): Promise<void> {
   await run(pythonExe, ["-m", "pip", "install", "piper-tts[http]==1.4.2"]);
 }
 
-async function pruneUnusedPythonComponents(pythonRoot: string): Promise<void> {
+async function pruneUnusedPythonComponents(
+  pythonRoot: string,
+  pythonExe: string,
+  target: string
+): Promise<void> {
   const removableNames = [
+    /^__pycache__$/i,
     /^_crypt(?:\.|$)/i,
+    /^_distutils_hack$/i,
     /^_tkinter(?:\.|$)/i,
+    /^distutils-precedence\.pth$/i,
+    /^ensurepip$/i,
     /^idlelib$/i,
     /^itcl\d/i,
+    /^isympy\.py$/i,
+    /^lib2to3$/i,
     /^libtcl/i,
     /^libtk/i,
+    /^mpmath(?:-|$)/i,
+    /^pip(?:-|$)/i,
+    /^pydoc_data$/i,
+    /^setuptools(?:-|$)/i,
+    /^sympy(?:-|$)/i,
     /^tcl\d/i,
+    /^test$/i,
+    /^tests$/i,
     /^thread\d/i,
     /^tk\d/i,
     /^tkinter$/i,
@@ -333,10 +383,80 @@ async function pruneUnusedPythonComponents(pythonRoot: string): Promise<void> {
     await fs.rm(removablePath, { recursive: true, force: true });
   }
 
+  for (const directory of [path.join(pythonRoot, "include"), path.join(pythonRoot, "share")]) {
+    await fs.rm(directory, { recursive: true, force: true });
+  }
+
+  if (target.startsWith("linux")) {
+    for (const name of [
+      "libpython3.so",
+      `libpython${PYTHON_ABI_VERSION}.so`,
+      `libpython${PYTHON_ABI_VERSION}.so.1.0`,
+      "pkgconfig"
+    ]) {
+      await fs.rm(path.join(pythonRoot, "lib", name), { recursive: true, force: true });
+    }
+  }
+
+  const binDir = path.join(pythonRoot, "bin");
+  if (fsSync.existsSync(binDir)) {
+    const executableNames = new Set([
+      path.basename(pythonExe),
+      "python",
+      "python3",
+      `python${PYTHON_ABI_VERSION}`
+    ]);
+    for (const entry of await fs.readdir(binDir)) {
+      if (!executableNames.has(entry)) {
+        await fs.rm(path.join(binDir, entry), { recursive: true, force: true });
+      }
+    }
+  }
+
+  const sitePackages = path.join(
+    pythonRoot,
+    "lib",
+    `python${PYTHON_ABI_VERSION}`,
+    "site-packages"
+  );
+  for (const relative of [
+    "onnxruntime/backend",
+    "onnxruntime/datasets",
+    "onnxruntime/quantization",
+    "onnxruntime/tools",
+    "onnxruntime/transformers",
+    "piper/train"
+  ]) {
+    await fs.rm(path.join(sitePackages, relative), { recursive: true, force: true });
+  }
+
   const remainingPaths: string[] = [];
   await findRemovablePaths(pythonRoot, remainingPaths);
   if (remainingPaths.length > 0) {
     throw new Error(`Failed to remove unused Python components: ${remainingPaths.join(", ")}`);
+  }
+}
+
+async function stripLinuxRuntime(pythonRoot: string, target: string): Promise<void> {
+  if (!target.startsWith("linux")) {
+    return;
+  }
+
+  const candidates: string[] = [];
+  async function walk(directory: string): Promise<void> {
+    for (const entry of await fs.readdir(directory, { withFileTypes: true })) {
+      const fullPath = path.join(directory, entry.name);
+      if (entry.isDirectory()) {
+        await walk(fullPath);
+      } else if (entry.isFile()
+        && (entry.name.startsWith("python3.") || entry.name.endsWith(".so") || entry.name.includes(".so."))) {
+        candidates.push(fullPath);
+      }
+    }
+  }
+  await walk(pythonRoot);
+  for (const candidate of candidates) {
+    await run("strip", ["--strip-unneeded", candidate]);
   }
 }
 
@@ -346,6 +466,7 @@ const SKIPPED_LINUX_LIBS = [
   "libanl.so",
   "libc.so",
   "libdl.so",
+  "libgcc_s.so",
   "libm.so",
   "libmvec.so",
   "libnsl.so",
@@ -422,12 +543,14 @@ async function main(): Promise<void> {
   const pythonExeRelative = await findPythonExe(outRoot, target);
   const pythonExe = path.resolve(outRoot, pythonExeRelative);
   await installPiper(pythonExe, target);
-  await pruneUnusedPythonComponents(path.join(outRoot, "python"));
+  const pythonRoot = path.join(outRoot, "python");
+  await pruneUnusedPythonComponents(pythonRoot, pythonExe, target);
+  await stripLinuxRuntime(pythonRoot, target);
 
   const ffmpegDir = path.join(outRoot, "ffmpeg");
   const ffmpegSource = await copyTool("ffmpeg", "FFMPEG_BIN", path.join(ffmpegDir, process.platform === "win32" ? "ffmpeg.exe" : "ffmpeg"));
-  const ffprobeSource = await copyTool("ffprobe", "FFPROBE_BIN", path.join(ffmpegDir, process.platform === "win32" ? "ffprobe.exe" : "ffprobe"));
-  await copyLinuxFfmpegLibraries([ffmpegSource, ffprobeSource], ffmpegDir);
+  await copyLinuxFfmpegLibraries([ffmpegSource], ffmpegDir);
+  const ffmpegLicenseSource = path.join(path.dirname(ffmpegSource), "FFmpeg-LICENSE.txt");
 
   const voicesConfig = parseVoiceDefinitions(
     JSON.parse(await fs.readFile(path.join("runtime", "voices.json"), "utf8")) as unknown
@@ -436,8 +559,16 @@ async function main(): Promise<void> {
   for (const voice of voicesConfig) {
     const modelPath = path.join("voices", `${voice.id}.onnx`);
     const configPath = path.join("voices", `${voice.id}.onnx.json`);
-    await download(voice.modelUrl, path.join(outRoot, modelPath));
-    await download(voice.configUrl, path.join(outRoot, configPath));
+    await copyCachedDownload(
+      voice.modelUrl,
+      path.join(".cache", "runtime", "voices", `${voice.id}.onnx`),
+      path.join(outRoot, modelPath)
+    );
+    await copyCachedDownload(
+      voice.configUrl,
+      path.join(".cache", "runtime", "voices", `${voice.id}.onnx.json`),
+      path.join(outRoot, configPath)
+    );
     manifestVoices.push({
       id: voice.id,
       name: voice.name,
@@ -458,8 +589,12 @@ async function main(): Promise<void> {
 
   const licensesDir = path.join(outRoot, "licenses");
   await fs.cp(path.join("runtime", "licenses"), licensesDir, { recursive: true });
-  await download(
+  if (fsSync.existsSync(ffmpegLicenseSource)) {
+    await fs.copyFile(ffmpegLicenseSource, path.join(licensesDir, "FFmpeg-LICENSE.txt"));
+  }
+  await copyCachedDownload(
     PIPER_SOURCE_URL,
+    path.join(".cache", "runtime", `piper1-gpl-${PIPER_VERSION}.tar.gz`),
     path.join(licensesDir, "source", `piper1-gpl-${PIPER_VERSION}.tar.gz`)
   );
   await fs.writeFile(
@@ -470,22 +605,28 @@ async function main(): Promise<void> {
       `Corresponding source archive: licenses/source/piper1-gpl-${PIPER_VERSION}.tar.gz`,
       "License text: licenses/PIPER-GPL-3.0.txt",
       "Voice models have separate terms. See licenses/VOICE_MODELS.md and runtime-manifest.json.",
-      "FFmpeg/ffprobe are copied from the build environment or configured FFMPEG_BIN/FFPROBE_BIN.",
+      "FFmpeg is copied from the build environment or configured FFMPEG_BIN.",
+      "Bundled FFmpeg license details: licenses/FFmpeg-LICENSE.txt.",
       "Linux FFmpeg shared libraries are copied into ffmpeg/lib when the source tools are dynamically linked."
     ].join("\n"),
     "utf8"
   );
 
+  const versionResult = await runForOutput(pythonExe, ["--version"]);
+  if (versionResult.code !== 0) {
+    throw new Error(`Embedded Python version check failed: ${versionResult.stderr}`);
+  }
+  const pythonVersion = `${versionResult.stdout}\n${versionResult.stderr}`
+    .match(/Python\s+([^\s]+)/)?.[1] || "unknown";
   const manifestBase = {
     target,
-    pythonVersion: "unknown",
+    pythonVersion,
     pythonBuildStandaloneVersion: pythonAsset.pythonBuildStandaloneVersion,
     piperVersion: PIPER_VERSION,
     runtimeSha256: "",
     pythonExe: pythonExeRelative,
     piperServerEntrypoint: "piper.http_server",
     ffmpegExe: path.join("ffmpeg", process.platform === "win32" ? "ffmpeg.exe" : "ffmpeg"),
-    ffprobeExe: path.join("ffmpeg", process.platform === "win32" ? "ffprobe.exe" : "ffprobe"),
     voices: manifestVoices
   };
   const runtimeSha256 = await hashDirectory(outRoot);

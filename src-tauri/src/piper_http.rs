@@ -2,12 +2,10 @@ use anyhow::{anyhow, Context, Result};
 use reqwest::Client;
 use std::{
     net::{SocketAddr, TcpListener},
-    path::Path,
     process::Stdio,
     time::Duration,
 };
 use tokio::{
-    fs,
     process::{Child, Command},
     time::sleep,
 };
@@ -89,7 +87,7 @@ impl PiperHttpEngine {
         self.wait_until_healthy().await
     }
 
-    pub async fn synthesize_to_file(&mut self, text: &str, output_path: &Path) -> Result<()> {
+    pub async fn synthesize(&mut self, text: &str) -> Result<Vec<u8>> {
         let port = self
             .port
             .ok_or_else(|| anyhow!("Piper HTTP server is not running."))?;
@@ -107,12 +105,7 @@ impl PiperHttpEngine {
                 response.status()
             ));
         }
-        let bytes = response.bytes().await?;
-        if let Some(parent) = output_path.parent() {
-            fs::create_dir_all(parent).await?;
-        }
-        fs::write(output_path, bytes).await?;
-        Ok(())
+        Ok(response.bytes().await?.to_vec())
     }
 
     async fn wait_until_healthy(&self) -> Result<()> {

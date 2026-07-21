@@ -1,216 +1,100 @@
 use anyhow::{anyhow, Context, Result};
 use html2text::render::TrivialDecorator;
-use quick_xml::events::Event;
-use quick_xml::Reader;
-use std::{
-    collections::HashMap,
-    fs,
-    io::Read,
-    path::{Path, PathBuf},
-};
-use zip::ZipArchive;
+use rbook::{epub::reader::LinearBehavior, Epub};
+use std::{collections::HashMap, fs, path::Path};
 
 use crate::language::resolve_narration_language;
 use crate::models::{ChapterExtraction, EpubExtractionResult};
 use crate::text::normalize_text;
 
-#[derive(Debug, Clone)]
-struct ManifestItem {
-    href: String,
-    title: Option<String>,
-}
-
-#[derive(Debug)]
-struct ParsedOpf {
-    title: String,
-    author: Option<String>,
-    language: Option<String>,
-    manifest: HashMap<String, ManifestItem>,
-    spine: Vec<String>,
-}
-
-fn read_zip_entry(archive: &mut ZipArchive<fs::File>, name: &str) -> Result<String> {
-    let mut file = archive
-        .by_name(name)
-        .with_context(|| format!("Missing EPUB entry {name}"))?;
-    let mut value = String::new();
-    file.read_to_string(&mut value)?;
-    Ok(value)
-}
-
-fn attr_value(event: &quick_xml::events::BytesStart<'_>, name: &[u8]) -> Option<String> {
-    event
-        .attributes()
-        .flatten()
-        .find(|attr| attr.key.as_ref() == name)
-        .and_then(|attr| String::from_utf8(attr.value.to_vec()).ok())
-}
-
-fn find_rootfile(container_xml: &str) -> Result<String> {
-    let mut reader = Reader::from_str(container_xml);
-    reader.config_mut().trim_text(true);
-    loop {
-        match reader.read_event()? {
-            Event::Start(event) | Event::Empty(event)
-                if event.name().as_ref().ends_with(b"rootfile") =>
-            {
-                if let Some(path) = attr_value(&event, b"full-path") {
-                    return Ok(path);
-                }
-            }
-            Event::Eof => break,
-            _ => {}
-        }
-    }
-    Err(anyhow!("EPUB container has no rootfile."))
-}
-
-fn parse_opf(opf: &str) -> Result<ParsedOpf> {
-    let mut reader = Reader::from_str(opf);
-    reader.config_mut().trim_text(true);
-    let mut title = String::new();
-    let mut author = None;
-    let mut language = None;
-    let mut current_text_tag: Option<String> = None;
-    let mut manifest = HashMap::new();
-    let mut spine = Vec::new();
-
-    loop {
-        match reader.read_event()? {
-            Event::Start(event) => {
-                let name = String::from_utf8_lossy(event.name().as_ref()).to_string();
-                if name.ends_with("title")
-                    || name.ends_with("creator")
-                    || name.ends_with("language")
-                {
-                    current_text_tag = Some(name);
-                }
-            }
-            Event::Empty(event) => {
-                let name = String::from_utf8_lossy(event.name().as_ref()).to_string();
-                if name.ends_with("item") {
-                    if let (Some(id), Some(href)) =
-                        (attr_value(&event, b"id"), attr_value(&event, b"href"))
-                    {
-                        manifest.insert(
-                            id,
-                            ManifestItem {
-                                href,
-                                title: attr_value(&event, b"title"),
-                            },
-                        );
-                    }
-                }
-                if name.ends_with("itemref") {
-                    if let Some(idref) = attr_value(&event, b"idref") {
-                        spine.push(idref);
-                    }
-                }
-            }
-            Event::Text(text) => {
-                if let Some(tag) = &current_text_tag {
-                    let value = text.decode()?.trim().to_string();
-                    if tag.ends_with("title") && title.is_empty() {
-                        title = value;
-                    } else if tag.ends_with("creator") && author.is_none() {
-                        author = Some(value);
-                    } else if tag.ends_with("language") && language.is_none() {
-                        language = Some(value);
-                    }
-                }
-            }
-            Event::End(_) => current_text_tag = None,
-            Event::Eof => break,
-            _ => {}
-        }
-    }
-
-    if title.is_empty() {
-        title = "Untitled".to_string();
-    }
-    Ok(ParsedOpf {
-        title,
-        author,
-        language,
-        manifest,
-        spine,
-    })
-}
-
-fn resolve_epub_path(opf_path: &str, href: &str) -> String {
-    let base = Path::new(opf_path)
-        .parent()
-        .unwrap_or_else(|| Path::new(""));
-    base.join(href).to_string_lossy().replace('\\', "/")
-}
-
 fn html_to_text(html: &str) -> Result<String> {
     let rendered =
         html2text::from_read_with_decorator(html.as_bytes(), usize::MAX, TrivialDecorator::new())
-            .context("Failed to render EPUB HTML as text")?;
+            .context("Failed to render EPUB XHTML as text")?;
     Ok(normalize_text(&rendered))
 }
 
-fn chapter_title(item: &ManifestItem, fallback_index: usize) -> String {
-    item.title
-        .as_ref()
-        .filter(|value| !value.trim().is_empty())
-        .cloned()
-        .unwrap_or_else(|| format!("Chapter {}", fallback_index + 1))
+fn navigation_labels(epub: &Epub) -> HashMap<String, String> {
+    let mut labels = HashMap::new();
+    if let Some(root) = epub.toc().contents() {
+        for entry in root.flatten() {
+            let label = entry.label().trim();
+            if label.is_empty() {
+                continue;
+            }
+            if let Some(manifest_entry) = entry.manifest_entry() {
+                labels
+                    .entry(manifest_entry.id().to_string())
+                    .or_insert_with(|| label.to_string());
+            }
+        }
+    }
+    labels
 }
 
 pub fn extract_epub(epub_path: &Path, work_dir: &Path) -> Result<EpubExtractionResult> {
-    let file = fs::File::open(epub_path)
-        .with_context(|| format!("Failed to open EPUB {}", epub_path.display()))?;
-    let mut archive = ZipArchive::new(file)?;
-    let container_xml = read_zip_entry(&mut archive, "META-INF/container.xml")?;
-    let opf_path = find_rootfile(&container_xml)?;
-    let opf = read_zip_entry(&mut archive, &opf_path)?;
-    let ParsedOpf {
-        mut title,
-        author,
-        language,
-        manifest,
-        spine,
-    } = parse_opf(&opf)?;
-    if title == "Untitled" {
-        title = epub_path
-            .file_stem()
-            .and_then(|value| value.to_str())
-            .unwrap_or("Untitled")
-            .to_string();
-    }
+    let epub = Epub::options()
+        .strict(false)
+        .open(epub_path)
+        .with_context(|| format!("Failed to parse EPUB {}", epub_path.display()))?;
+
+    let metadata = epub.metadata();
+    let title = metadata
+        .title()
+        .map(|entry| entry.value().trim().to_string())
+        .filter(|value| !value.is_empty())
+        .or_else(|| {
+            epub_path
+                .file_stem()
+                .and_then(|value| value.to_str())
+                .map(str::to_owned)
+        })
+        .unwrap_or_else(|| "Untitled".to_string());
+    let author = metadata
+        .creators()
+        .map(|entry| entry.value().trim().to_string())
+        .find(|value| !value.is_empty());
+    let declared_language = metadata
+        .language()
+        .map(|entry| entry.value().trim().to_string())
+        .filter(|value| !value.is_empty());
+    let labels = navigation_labels(&epub);
 
     let chapters_dir = work_dir.join("chapters");
+    let _ = fs::remove_dir_all(&chapters_dir);
     fs::create_dir_all(&chapters_dir)?;
     let mut chapters = Vec::new();
     let mut total_chars = 0_i64;
     let mut language_sample = String::new();
+    let reader = epub
+        .reader_builder()
+        .linear_behavior(LinearBehavior::Original)
+        .create();
 
-    for idref in spine {
-        let Some(item) = manifest.get(&idref) else {
-            continue;
-        };
-        let entry_path = resolve_epub_path(&opf_path, &item.href);
-        let Ok(html) = read_zip_entry(&mut archive, &entry_path) else {
-            continue;
-        };
-        let text = html_to_text(&html)?;
+    for content_result in reader {
+        let content = content_result.context("Failed to read an EPUB spine entry")?;
+        let text = html_to_text(content.content())?;
         if text.chars().filter(|ch| ch.is_alphabetic()).count() < 20 {
             continue;
         }
+
         let index = chapters.len();
-        let text_path: PathBuf = chapters_dir.join(format!("{:04}.txt", index + 1));
+        let text_path = chapters_dir.join(format!("{:04}.txt", index + 1));
         fs::write(&text_path, &text)?;
-        total_chars += text.len() as i64;
+        total_chars += text.chars().count() as i64;
         if language_sample.chars().count() < 50_000 {
             let remaining = 50_000_usize.saturating_sub(language_sample.chars().count());
             language_sample.extend(text.chars().take(remaining));
             language_sample.push('\n');
         }
+
+        let manifest_id = content.manifest_entry().id();
         chapters.push(ChapterExtraction {
             index: index as i64,
-            title: chapter_title(item, index),
+            title: labels
+                .get(manifest_id)
+                .cloned()
+                .unwrap_or_else(|| format!("Chapter {}", index + 1)),
             text_path: text_path.to_string_lossy().to_string(),
         });
     }
@@ -219,7 +103,7 @@ pub fn extract_epub(epub_path: &Path, work_dir: &Path) -> Result<EpubExtractionR
         return Err(anyhow!("EPUB parser produced zero readable chapters."));
     }
 
-    let language = resolve_narration_language(language.as_deref(), &language_sample)
+    let language = resolve_narration_language(declared_language.as_deref(), &language_sample)
         .ok_or_else(|| anyhow!("Only English and Spanish EPUBs are supported."))?;
 
     Ok(EpubExtractionResult {
@@ -234,17 +118,45 @@ pub fn extract_epub(epub_path: &Path, work_dir: &Path) -> Result<EpubExtractionR
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::io::Write;
 
-    #[test]
-    fn parses_epub_language_metadata() {
-        let parsed = parse_opf(
-            r#"<package><metadata><dc:title>Book</dc:title><dc:creator>Author</dc:creator><dc:language>en-GB</dc:language></metadata><manifest/><spine/></package>"#,
-        )
-        .unwrap();
+    fn fixture_files(root: &Path, directory: &Path, files: &mut Vec<String>) {
+        for entry in fs::read_dir(directory).unwrap() {
+            let path = entry.unwrap().path();
+            if path.is_dir() {
+                fixture_files(root, &path, files);
+            } else {
+                files.push(
+                    path.strip_prefix(root)
+                        .unwrap()
+                        .to_string_lossy()
+                        .replace('\\', "/"),
+                );
+            }
+        }
+    }
 
-        assert_eq!(parsed.title, "Book");
-        assert_eq!(parsed.author.as_deref(), Some("Author"));
-        assert_eq!(parsed.language.as_deref(), Some("en-GB"));
+    fn write_fixture_epub(source: &Path, destination: &Path) {
+        let output = fs::File::create(destination).unwrap();
+        let mut archive = zip::ZipWriter::new(output);
+        let stored = zip::write::SimpleFileOptions::default()
+            .compression_method(zip::CompressionMethod::Stored);
+        let deflated = zip::write::SimpleFileOptions::default()
+            .compression_method(zip::CompressionMethod::Deflated);
+        archive.start_file("mimetype", stored).unwrap();
+        archive
+            .write_all(&fs::read(source.join("mimetype")).unwrap())
+            .unwrap();
+        let mut files = Vec::new();
+        fixture_files(source, source, &mut files);
+        files.sort();
+        for relative in files.into_iter().filter(|path| path != "mimetype") {
+            archive.start_file(&relative, deflated).unwrap();
+            archive
+                .write_all(&fs::read(source.join(relative)).unwrap())
+                .unwrap();
+        }
+        archive.finish().unwrap();
     }
 
     #[test]
@@ -255,5 +167,48 @@ mod tests {
         .unwrap();
 
         assert_eq!(text, "Uno dos.\n\nTres & cuatro.\nFin.");
+    }
+
+    #[test]
+    fn extracts_epub3_metadata_navigation_and_spine_from_fixture() {
+        let fixture = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("tests")
+            .join("fixtures")
+            .join("epub3-book");
+        let temp = tempfile::tempdir().unwrap();
+        let epub_path = temp.path().join("fixture.epub");
+        write_fixture_epub(&fixture, &epub_path);
+
+        let result = extract_epub(&epub_path, &temp.path().join("work")).unwrap();
+
+        assert_eq!(result.title, "Fixture Book");
+        assert_eq!(result.author.as_deref(), Some("Fixture Author"));
+        assert_eq!(result.language, "en");
+        assert_eq!(result.chapters.len(), 2);
+        assert_eq!(result.chapters[0].title, "The First Chapter");
+        assert_eq!(result.chapters[1].title, "The Second Chapter");
+        assert!(result.total_chars > 100);
+        assert!(fs::read_to_string(&result.chapters[0].text_path)
+            .unwrap()
+            .contains("This is the first fixture chapter"));
+    }
+
+    #[test]
+    fn extracts_epub2_ncx_navigation_from_fixture_archive() {
+        let fixture = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("tests")
+            .join("fixtures")
+            .join("epub2-book");
+        let temp = tempfile::tempdir().unwrap();
+        let epub_path = temp.path().join("fixture-2.epub");
+        write_fixture_epub(&fixture, &epub_path);
+
+        let result = extract_epub(&epub_path, &temp.path().join("work")).unwrap();
+
+        assert_eq!(result.title, "Spanish Fixture");
+        assert_eq!(result.author.as_deref(), Some("Fixture Author"));
+        assert_eq!(result.language, "es");
+        assert_eq!(result.chapters.len(), 1);
+        assert_eq!(result.chapters[0].title, "Capitulo de prueba");
     }
 }
